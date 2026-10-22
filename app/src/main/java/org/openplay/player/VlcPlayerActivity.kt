@@ -72,12 +72,19 @@ class VlcPlayerActivity : ComponentActivity() {
         items = list; index = idx
         enterImmersive()
         sys = SystemControls(this)
+        ui.speed = Prefs.float(this, "speed", 1f)
+        ui.orientation = Prefs.int(this, "orient", 0)
+        ui.bgPlay = Prefs.bool(this, "bg", false)
+        scaleIndex = Prefs.int(this, "resize", 0).coerceIn(0, 2)
+        ui.resizeName = scaleNames[scaleIndex]
+        if (ui.orientation != 0) applyOrientation(ui.orientation, false)
 
         libVlc = LibVLC(this, arrayListOf("--no-drop-late-frames", "--no-skip-frames"))
         mp = MediaPlayer(libVlc)
         videoLayout = VLCVideoLayout(this)
         mp.attachViews(videoLayout, null, true, false)
         ui.playlist = items
+        mp.videoScale = scales[scaleIndex]
 
         val actions = PlayerActions(
             onBack = { finish() },
@@ -109,14 +116,19 @@ class VlcPlayerActivity : ComponentActivity() {
                 ui.resizeName = scaleNames[scaleIndex]; ui.hud = ui.resizeName
             },
             onBrightness = { ui.hud = sys.brightnessBy(it) },
-            onVolumeSteps = { ui.hud = sys.volumeBy(it) }
+            onVolumeSteps = { ui.hud = sys.volumeBy(it) },
+            onSaveDefaults = {
+                Prefs.setFloat(this, "speed", ui.speed); Prefs.setInt(this, "orient", ui.orientation)
+                Prefs.setBool(this, "bg", ui.bgPlay); Prefs.setInt(this, "resize", scaleIndex)
+                ui.hud = "Saved as default"
+            }
         )
 
         mp.setEventListener { ev ->
             when (ev.type) {
                 MediaPlayer.Event.Playing -> if (!resumed) {
                     resumed = true
-                    val saved = prefs.getLong(items[index].uri.toString(), 0L)
+                    val saved = if (Prefs.bool(this, "resume", true)) prefs.getLong(items[index].uri.toString(), 0L) else 0L
                     if (saved > 0) mp.time = saved
                 }
                 MediaPlayer.Event.EndReached -> runOnUiThread { if (index + 1 < items.size) openIndex(index + 1) }
@@ -133,6 +145,7 @@ class VlcPlayerActivity : ComponentActivity() {
             }
         }
         openIndex(index)
+        mp.rate = ui.speed
         handler.post(ticker)
     }
 

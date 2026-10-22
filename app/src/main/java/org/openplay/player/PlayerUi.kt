@@ -59,7 +59,7 @@ class PlayerActions(
     val onRotate: () -> Unit, val onLockToggle: () -> Unit, val onAudio: (Int) -> Unit,
     val onSub: (Int) -> Unit, val onLoadSub: () -> Unit, val onPlayItem: (Int) -> Unit,
     val onNext: () -> Unit, val onPrev: () -> Unit, val onResize: () -> Unit,
-    val onBrightness: (Float) -> Unit, val onVolumeSteps: (Int) -> Unit
+    val onBrightness: (Float) -> Unit, val onVolumeSteps: (Int) -> Unit, val onSaveDefaults: () -> Unit
 )
 
 fun fmtTime(ms: Long): String {
@@ -148,6 +148,7 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
                         OptionRow(Icons.Rounded.Subtitles, "Subtitles") { act { sheet = Sheet.Subs } }
                         OptionRow(Icons.Rounded.AspectRatio, "Aspect", s.resizeName) { act { a.onResize() } }
                         OptionRow(Icons.Rounded.PlaylistPlay, "Playlist", "${s.playlist.size}") { act { sheet = Sheet.Playlist } }
+                        OptionRow(Icons.Rounded.Save, "Save as default") { act { a.onSaveDefaults() } }
                     }
                 }
 

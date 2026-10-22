@@ -72,6 +72,12 @@ class PlayerActivity : ComponentActivity() {
         items = list; startIndex = idx
         enterImmersive()
         sys = SystemControls(this)
+        ui.speed = Prefs.float(this, "speed", 1f)
+        ui.orientation = Prefs.int(this, "orient", 0)
+        ui.bgPlay = Prefs.bool(this, "bg", false)
+        resizeIndex = Prefs.int(this, "resize", 0).coerceIn(0, 2)
+        ui.resizeName = resizeNames[resizeIndex]
+        if (ui.orientation != 0) applyOrientation(ui.orientation, false)
         actions = PlayerActions(
             onBack = { finish() },
             onTogglePlay = { controller?.let { if (it.isPlaying) it.pause() else it.play() } },
@@ -101,7 +107,12 @@ class PlayerActivity : ComponentActivity() {
                 ui.resizeName = resizeNames[resizeIndex]; ui.hud = ui.resizeName
             },
             onBrightness = { ui.hud = sys.brightnessBy(it) },
-            onVolumeSteps = { ui.hud = sys.volumeBy(it) }
+            onVolumeSteps = { ui.hud = sys.volumeBy(it) },
+            onSaveDefaults = {
+                Prefs.setFloat(this, "speed", ui.speed); Prefs.setInt(this, "orient", ui.orientation)
+                Prefs.setBool(this, "bg", ui.bgPlay); Prefs.setInt(this, "resize", resizeIndex)
+                ui.hud = "Saved as default"
+            }
         )
         ui.playlist = items; ui.index = startIndex
 
@@ -142,8 +153,9 @@ class PlayerActivity : ComponentActivity() {
                 }
             })
             controller = c
-            val resume = prefs.getLong(items[startIndex].uri.toString(), 0L)
+            val resume = if (Prefs.bool(this, "resume", true)) prefs.getLong(items[startIndex].uri.toString(), 0L) else 0L
             c.setMediaItems(items.map { MediaItem.fromUri(it.uri) }, startIndex, resume)
+            c.setPlaybackSpeed(ui.speed)
             c.prepare(); c.play()
         }, ContextCompat.getMainExecutor(this))
     }

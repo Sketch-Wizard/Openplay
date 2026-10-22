@@ -1,7 +1,9 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package org.openplay.player
 
 import android.Manifest
-import android.content.ContentUris
+import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -9,20 +11,22 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -39,43 +43,17 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-
-data class Video(
-    val uri: Uri, val title: String, val durationMs: Long, val folder: String,
-    val size: Long, val dateAdded: Long
-)
-
-enum class SortKey(val label: String) {
-    NAME("Name"), DATE("Date added"), SIZE("Size"), DURATION("Duration")
-}
-
-fun List<Video>.sortVideos(key: SortKey, asc: Boolean): List<Video> {
-    val c: Comparator<Video> = when (key) {
-        SortKey.NAME -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.title }
-        SortKey.DATE -> compareBy<Video> { it.dateAdded }
-        SortKey.SIZE -> compareBy<Video> { it.size }
-        SortKey.DURATION -> compareBy<Video> { it.durationMs }
-    }
-    return sortedWith(if (asc) c else c.reversed())
-}
-
-fun fmtSize(b: Long): String = when {
-    b >= (1L shl 30) -> "%.1f GB".format(b / (1L shl 30).toDouble())
-    b >= (1L shl 20) -> "%.0f MB".format(b / (1L shl 20).toDouble())
-    else -> "${b / 1024} KB"
-}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppState.theme = Prefs.int(this, "theme", 0)
         if (Build.VERSION.SDK_INT >= 33) {
             registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
                 .launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -86,7 +64,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+    val dark = when (AppState.theme) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
     val scheme = if (dark) darkColorScheme(
         primary = Color(0xFFFFA040), onPrimary = Color(0xFF3B1A00),
         primaryContainer = Color(0xFF5C2E00), onPrimaryContainer = Color(0xFFFFDDBB),
@@ -106,6 +84,7 @@ fun AppTheme(content: @Composable () -> Unit) {
 @Composable
 fun Root() {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val perm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_VIDEO
     else Manifest.permission.READ_EXTERNAL_STORAGE
     var granted by remember { mutableStateOf(ctx.checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED) }
@@ -116,47 +95,193 @@ fun Root() {
     var asc by remember { mutableStateOf(prefs.getBoolean("asc", false)) }
     var grid by remember { mutableStateOf(prefs.getBoolean("grid", false)) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var reload by remember { mutableIntStateOf(0) }
+    var vaultKey by remember { mutableIntStateOf(0) }
+    var busy by remember { mutableStateOf<String?>(null) }
+    var dlg by remember { mutableStateOf<Dlg?>(null) }
+    var pending by remember { mutableStateOf<Pending?>(null) }
+
+    val sender = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
+        val p = pending; pending = null
+        if (r.resultCode == Activity.RESULT_OK) p?.then?.invoke() else p?.denied?.invoke()
+        reload++; vaultKey++
+    }
 
     LaunchedEffect(Unit) { if (!granted) permLauncher.launch(perm) }
-    LaunchedEffect(granted) { if (granted) videos = withContext(Dispatchers.IO) { queryVideos(ctx) } }
+    LaunchedEffect(granted, reload) { if (granted) videos = withContext(Dispatchers.IO) { queryVideos(ctx) } }
     val sorted = remember(videos, sortKey, asc) { videos.sortVideos(sortKey, asc) }
 
-    Column(Modifier.fillMaxSize()) {
-        Header()
-        TabSection(tab) { tab = it }
-        if (tab < 2 && granted) {
-            val count = if (tab == 0) "${sorted.size} videos" else "${sorted.map { it.folder }.distinct().size} folders"
-            Toolbar(count, sortKey, asc, grid,
-                onSort = { sortKey = it; prefs.edit().putInt("sort", it.ordinal).apply() },
-                onOrder = { asc = !asc; prefs.edit().putBoolean("asc", asc).apply() },
-                onGrid = { grid = !grid; prefs.edit().putBoolean("grid", grid).apply() })
+    fun toast(m: String) = Toast.makeText(ctx, m, Toast.LENGTH_LONG).show()
+
+    fun requestWrite(uris: List<Uri>, then: () -> Unit) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            pending = Pending(then, null)
+            sender.launch(IntentSenderRequest.Builder(MediaStore.createWriteRequest(ctx.contentResolver, uris).intentSender).build())
+        } else then()
+    }
+
+    fun requestDelete(uris: List<Uri>, denied: (() -> Unit)? = null) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            pending = Pending(null, denied)
+            sender.launch(IntentSenderRequest.Builder(MediaStore.createDeleteRequest(ctx.contentResolver, uris).intentSender).build())
+        } else {
+            try { uris.forEach { ctx.contentResolver.delete(it, null, null) } }
+            catch (e: Exception) { denied?.invoke(); toast("Could not delete on this Android version") }
+            reload++
         }
-        Box(Modifier.weight(1f)) {
-            when {
-                tab < 2 && !granted -> Column(Modifier.padding(24.dp)) {
-                    Text("OpenPlay needs access to your videos.")
-                    Button(onClick = { permLauncher.launch(perm) }) { Text("Grant access") }
+    }
+
+    fun doLock(list: List<Video>) {
+        if (!Vault.hasPin(ctx)) { toast("Create a PIN in the Private tab first"); tab = 3; return }
+        scope.launch {
+            busy = "Moving to private…"
+            val added = withContext(Dispatchers.IO) { list.mapNotNull { v -> Vault.add(ctx, v)?.let { v to it } } }
+            busy = null
+            if (added.isEmpty()) { toast("Could not copy the video(s)"); return@launch }
+            requestDelete(added.map { it.first.uri }) { added.forEach { Vault.remove(ctx, it.second) } }
+        }
+    }
+
+    fun doRename(t: MenuTarget, name: String) {
+        if (t.isFolder) {
+            val rel = t.videos.first().relPath
+            val parent = rel.trimEnd('/').substringBeforeLast('/', "")
+            val dest = if (parent.isEmpty()) "" else "$parent/" + name.trim('/', ' ') + "/"
+            if (dest.isEmpty() || !(dest.startsWith("Movies/") || dest.startsWith("DCIM/"))) {
+                toast("This folder can't be renamed"); return
+            }
+            requestWrite(t.videos.map { it.uri }) {
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) { t.videos.all { MediaOps.move(ctx, it, dest) } }
+                    toast(if (ok) "Folder renamed" else "Rename failed"); reload++
                 }
-                tab == 0 -> VideoCollection(sorted, grid) { i -> ctx.openPlayer(sorted.map { PlItem(it.uri, it.title) }, i) }
-                tab == 1 -> FoldersScreen(sorted, grid)
-                tab == 2 -> StreamScreen()
-                else -> PrivateScreen(0)
+            }
+        } else {
+            val v = t.videos.first()
+            val ext = if (v.title.contains('.')) "." + v.title.substringAfterLast('.') else ""
+            val full = if (name.endsWith(ext, true)) name else name + ext
+            requestWrite(listOf(v.uri)) {
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) { MediaOps.rename(ctx, v, full) }
+                    toast(if (ok) "Renamed" else "Rename failed"); reload++
+                }
+            }
+        }
+    }
+
+    fun detailRows(t: MenuTarget): List<Pair<String, String>> {
+        if (t.isFolder) return listOf(
+            "Name" to t.title, "Location" to t.videos.first().relPath.ifEmpty { t.title },
+            "Videos" to "${t.videos.size}", "Total size" to fmtSize(t.videos.sumOf { it.size })
+        )
+        val v = t.videos.first()
+        return listOfNotNull(
+            "Name" to v.title, "Location" to v.relPath.ifEmpty { v.folder }, "Size" to fmtSize(v.size),
+            "Duration" to fmtTime(v.durationMs),
+            if (v.width > 0) "Resolution" to "${v.width} × ${v.height}" else null,
+            "Type" to v.mime,
+            "Added" to java.text.DateFormat.getDateTimeInstance().format(java.util.Date(v.dateAdded * 1000))
+        )
+    }
+
+    val onVideoLong: (Video) -> Unit = { v -> dlg = Dlg.Menu(MenuTarget(v.title, listOf(v), false)) }
+    val onFolderLong: (List<Video>) -> Unit = { l -> dlg = Dlg.Menu(MenuTarget(l.first().folder, l, true)) }
+
+    if (showSettings) { SettingsScreen { showSettings = false }; return }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Header { showSettings = true }
+            TabSection(tab) { tab = it }
+            if (tab < 2 && granted) {
+                val count = if (tab == 0) "${sorted.size} videos" else "${sorted.map { it.folderKey }.distinct().size} folders"
+                Toolbar(count, sortKey, asc, grid,
+                    onSort = { sortKey = it; prefs.edit().putInt("sort", it.ordinal).apply() },
+                    onOrder = { asc = !asc; prefs.edit().putBoolean("asc", asc).apply() },
+                    onGrid = { grid = !grid; prefs.edit().putBoolean("grid", grid).apply() })
+            }
+            Box(Modifier.weight(1f)) {
+                when {
+                    tab < 2 && !granted -> Column(Modifier.padding(24.dp)) {
+                        Text("OpenPlay needs access to your videos.")
+                        Button(onClick = { permLauncher.launch(perm) }) { Text("Grant access") }
+                    }
+                    tab == 0 -> VideoCollection(sorted, grid, onVideoLong) { i ->
+                        ctx.openPlayer(sorted.map { PlItem(it.uri, it.title) }, i)
+                    }
+                    tab == 1 -> FoldersScreen(sorted, grid, onVideoLong, onFolderLong)
+                    tab == 2 -> StreamScreen()
+                    else -> PrivateScreen(vaultKey, onChanged = { reload++ }, setBusy = { busy = it })
+                }
+            }
+        }
+
+        when (val d = dlg) {
+            is Dlg.Menu -> ActionSheet(d.t.title, if (d.t.isFolder) folderMenu else videoMenu, onPick = { a ->
+                dlg = when (a) {
+                    Act.Rename -> Dlg.Rename(d.t)
+                    Act.Details -> Dlg.Details(d.t)
+                    Act.Delete -> Dlg.Delete(d.t)
+                    Act.Move -> Dlg.Dest(d.t.videos, false)
+                    Act.Copy -> Dlg.Dest(d.t.videos, true)
+                    Act.Share -> { MediaOps.share(ctx, d.t.videos.first()); null }
+                    Act.Private -> { doLock(d.t.videos); null }
+                    else -> null
+                }
+            }, onDismiss = { dlg = null })
+            is Dlg.Rename -> RenameDialog(
+                if (d.t.isFolder) d.t.title else d.t.title.substringBeforeLast('.'),
+                onOk = { n -> dlg = null; doRename(d.t, n) }, onDismiss = { dlg = null })
+            is Dlg.Details -> DetailsDialog(detailRows(d.t)) { dlg = null }
+            is Dlg.Delete -> ConfirmDialog(
+                if (d.t.isFolder) "Delete folder?" else "Delete video?",
+                if (d.t.isFolder) "All ${d.t.videos.size} videos in \"${d.t.title}\" will be permanently deleted."
+                else "\"${d.t.title}\" will be permanently deleted.",
+                "Delete", onOk = { dlg = null; requestDelete(d.t.videos.map { it.uri }) }, onDismiss = { dlg = null })
+            is Dlg.Dest -> {
+                val opts = remember(d) { destinations(videos, d.videos.first().relPath) }
+                ChoiceDialog(if (d.copy) "Copy to…" else "Move to…", opts, -1, onPick = { i ->
+                    val dest = opts[i]; dlg = null
+                    if (d.copy) scope.launch {
+                        busy = "Copying…"
+                        val ok = withContext(Dispatchers.IO) { d.videos.all { MediaOps.copy(ctx, it, dest) } }
+                        busy = null; toast(if (ok) "Copied" else "Copy failed (needs Android 10 or newer)"); reload++
+                    } else requestWrite(d.videos.map { it.uri }) {
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) { d.videos.all { MediaOps.move(ctx, it, dest) } }
+                            toast(if (ok) "Moved" else "Move failed (needs Android 10 or newer)"); reload++
+                        }
+                    }
+                }, onDismiss = { dlg = null })
+            }
+            null -> {}
+        }
+
+        busy?.let { msg ->
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).clickable(enabled = true) {}, contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.White)
+                    Spacer(Modifier.height(12.dp))
+                    Text(msg, color = Color.White)
+                }
             }
         }
     }
 }
 
 @Composable
-fun Header() {
+fun Header(onSettings: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().height(44.dp)
             .background(Brush.horizontalGradient(listOf(Color(0xFFFF9800), Color(0xFFE8590C))))
-            .padding(horizontal = 14.dp),
+            .padding(start = 14.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Image(painterResource(R.drawable.logo), null, Modifier.size(28.dp))
         Spacer(Modifier.width(10.dp))
-        Text("OpenPlay", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text("OpenPlay", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+        IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, "Settings", tint = Color.White) }
     }
 }
 
@@ -236,7 +361,7 @@ private fun DurationBadge(ms: Long, modifier: Modifier) {
 }
 
 @Composable
-fun VideoCollection(videos: List<Video>, grid: Boolean, onOpen: (Int) -> Unit) {
+fun VideoCollection(videos: List<Video>, grid: Boolean, onLong: (Video) -> Unit, onOpen: (Int) -> Unit) {
     if (videos.isEmpty()) { Text("No videos found.", Modifier.padding(24.dp)); return }
     if (grid) {
         LazyVerticalGrid(
@@ -244,7 +369,7 @@ fun VideoCollection(videos: List<Video>, grid: Boolean, onOpen: (Int) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             itemsIndexed(videos, key = { _, v -> v.uri.toString() }) { i, v ->
-                Column(Modifier.clickable { onOpen(i) }) {
+                Column(Modifier.combinedClickable(onClick = { onOpen(i) }, onLongClick = { onLong(v) })) {
                     Box {
                         Thumb(v.uri, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                         DurationBadge(v.durationMs, Modifier.align(Alignment.BottomEnd))
@@ -257,7 +382,10 @@ fun VideoCollection(videos: List<Video>, grid: Boolean, onOpen: (Int) -> Unit) {
     } else {
         LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
             itemsIndexed(videos, key = { _, v -> v.uri.toString() }) { i, v ->
-                Row(Modifier.fillMaxWidth().clickable { onOpen(i) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().combinedClickable(onClick = { onOpen(i) }, onLongClick = { onLong(v) }).padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box {
                         Thumb(v.uri, Modifier.width(132.dp).aspectRatio(16f / 9f))
                         DurationBadge(v.durationMs, Modifier.align(Alignment.BottomEnd))
@@ -275,11 +403,11 @@ fun VideoCollection(videos: List<Video>, grid: Boolean, onOpen: (Int) -> Unit) {
 }
 
 @Composable
-fun FoldersScreen(videos: List<Video>, grid: Boolean) {
+fun FoldersScreen(videos: List<Video>, grid: Boolean, onVideoLong: (Video) -> Unit, onFolderLong: (List<Video>) -> Unit) {
     val ctx = LocalContext.current
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     BackHandler(open != null) { open = null }
-    val groups = remember(videos) { videos.groupBy { it.folder }.toSortedMap(String.CASE_INSENSITIVE_ORDER) }
+    val groups = remember(videos) { videos.groupBy { it.folderKey }.toSortedMap(String.CASE_INSENSITIVE_ORDER) }
     val current = open
     if (current != null) {
         val list = groups[current].orEmpty()
@@ -287,9 +415,9 @@ fun FoldersScreen(videos: List<Video>, grid: Boolean) {
             Row(Modifier.fillMaxWidth().clickable { open = null }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.ArrowBack, null)
                 Spacer(Modifier.width(8.dp))
-                Text(current, fontWeight = FontWeight.Bold)
+                Text(list.firstOrNull()?.folder ?: current, fontWeight = FontWeight.Bold)
             }
-            VideoCollection(list, grid) { i -> ctx.openPlayer(list.map { PlItem(it.uri, it.title) }, i) }
+            VideoCollection(list, grid, onVideoLong) { i -> ctx.openPlayer(list.map { PlItem(it.uri, it.title) }, i) }
         }
         return
     }
@@ -301,9 +429,9 @@ fun FoldersScreen(videos: List<Video>, grid: Boolean) {
             horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(folders, key = { it.key }) { e ->
-                Column(Modifier.clickable { open = e.key }) {
+                Column(Modifier.combinedClickable(onClick = { open = e.key }, onLongClick = { onFolderLong(e.value) })) {
                     Thumb(e.value.first().uri, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-                    Text(e.key, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 4.dp))
+                    Text(e.value.first().folder, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 4.dp))
                     Text("${e.value.size} videos", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 }
             }
@@ -311,11 +439,14 @@ fun FoldersScreen(videos: List<Video>, grid: Boolean) {
     } else {
         LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
             items(folders, key = { it.key }) { e ->
-                Row(Modifier.fillMaxWidth().clickable { open = e.key }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().combinedClickable(onClick = { open = e.key }, onLongClick = { onFolderLong(e.value) }).padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Thumb(e.value.first().uri, Modifier.width(96.dp).aspectRatio(16f / 9f))
                     Spacer(Modifier.width(12.dp))
                     Column {
-                        Text(e.key, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                        Text(e.value.first().folder, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
                         Text("${e.value.size} videos", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
                 }
@@ -333,60 +464,4 @@ fun StreamScreen() {
         OutlinedTextField(url, { url = it }, label = { Text("URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Button(onClick = { if (url.startsWith("http")) ctx.play(Uri.parse(url.trim())) }) { Text("Play") }
     }
-}
-
-@Composable
-fun PrivateScreen(refreshKey: Int) {
-    val ctx = LocalContext.current
-    var unlocked by remember { mutableStateOf(false) }
-    var pin by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf(false) }
-    var files by remember { mutableStateOf(listOf<File>()) }
-    val creating = !Vault.hasPin(ctx)
-
-    if (!unlocked) {
-        Column(Modifier.padding(24.dp)) {
-            Text(if (creating) "Create a PIN (4–8 digits) for your private folder" else "Enter PIN")
-            OutlinedTextField(
-                pin, { pin = it.filter(Char::isDigit).take(8); error = false },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                isError = error, singleLine = true
-            )
-            Button(onClick = {
-                if (creating) { if (pin.length >= 4) { Vault.setPin(ctx, pin); unlocked = true } else error = true }
-                else if (Vault.check(ctx, pin)) unlocked = true else error = true
-            }) { Text(if (creating) "Set PIN" else "Unlock") }
-        }
-    } else {
-        LaunchedEffect(refreshKey) { files = Vault.list(ctx) }
-        if (files.isEmpty()) Text("Private folder is empty. Locking videos returns in the next update.", Modifier.padding(24.dp))
-        LazyColumn(contentPadding = PaddingValues(16.dp)) {
-            items(files) { f ->
-                Row(Modifier.fillMaxWidth().clickable { ctx.play(Uri.fromFile(f)) }.padding(vertical = 10.dp)) {
-                    Text(f.name, Modifier.weight(1f), maxLines = 2)
-                    TextButton(onClick = { f.delete(); files = Vault.list(ctx) }) { Text("Delete") }
-                }
-                HorizontalDivider()
-            }
-        }
-    }
-}
-
-fun queryVideos(c: Context): List<Video> {
-    val out = mutableListOf<Video>()
-    val m = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-    val proj = arrayOf(
-        MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME, MediaStore.Video.Media.DURATION,
-        MediaStore.Video.Media.BUCKET_DISPLAY_NAME, MediaStore.Video.Media.SIZE, MediaStore.Video.Media.DATE_ADDED
-    )
-    c.contentResolver.query(m, proj, null, null, null)?.use { q ->
-        while (q.moveToNext()) {
-            out += Video(
-                ContentUris.withAppendedId(m, q.getLong(0)), q.getString(1) ?: "Unknown",
-                q.getLong(2), q.getString(3) ?: "Other", q.getLong(4), q.getLong(5)
-            )
-        }
-    }
-    return out
 }

@@ -2,7 +2,11 @@
 
 An ad-free, open-source Android video player built on Jetpack Media3 (ExoPlayer) and Jetpack Compose.
 
-## Features (v0.4)
+## Features (v0.5)
+- Long-press menus for videos (rename, details, share, move, copy, move to private, delete) and folders (rename, details, move all to private, delete)
+- Private folder: 5-digit PIN with keypad, videos are moved out of the library into app-private storage, restore sends them back to their original folder (or Movies/Restored)
+- Settings: theme (system/light/dark), language, default orientation/speed/aspect ratio, background play, resume, feedback, about
+- Player option "Save as default" stores the current speed, orientation, aspect ratio and background-play choice
 - Redesigned home: header, tab pills, thumbnails, sorting (name/date/size/duration), list or grid view
 - New player UI: modern controls, collapsible options panel, playlist, audio/subtitle menus, orientation switch + rotation lock, landscape playback
 - Videos and Folders tabs (MediaStore, internal storage + SD card)
