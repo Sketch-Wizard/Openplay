@@ -14,14 +14,11 @@ import androidx.core.view.WindowInsetsControllerCompat
 
 data class PlItem(val uri: Uri, val title: String)
 
-/** Opens the right engine (ExoPlayer or libVLC) with a playlist. */
-fun Context.openPlayer(items: List<PlItem>, index: Int, forceVlc: Boolean = false) {
+/** Opens the player with a playlist. */
+fun Context.openPlayer(items: List<PlItem>, index: Int) {
     if (items.isEmpty()) return
-    val item = items[index]
-    val cls = if (forceVlc || Formats.needsVlc(this, item.uri)) VlcPlayerActivity::class.java
-    else PlayerActivity::class.java
     startActivity(
-        Intent(this, cls).setData(item.uri)
+        Intent(this, PlayerActivity::class.java).setData(items[index].uri)
             .putStringArrayListExtra("pl_uris", ArrayList(items.map { it.uri.toString() }))
             .putStringArrayListExtra("pl_titles", ArrayList(items.map { it.title }))
             .putExtra("pl_index", index)
@@ -71,13 +68,13 @@ class SystemControls(private val a: Activity) {
     fun brightnessBy(d: Float): String {
         brightness = (brightness + d).coerceIn(0.02f, 1f)
         a.window.attributes = a.window.attributes.also { it.screenBrightness = brightness }
-        return "Brightness ${(brightness * 100).toInt()}%"
+        return a.getString(R.string.hud_brightness, (brightness * 100).toInt())
     }
 
     fun volumeBy(n: Int): String {
         val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val v = (audio.getStreamVolume(AudioManager.STREAM_MUSIC) + n).coerceIn(0, max)
         audio.setStreamVolume(AudioManager.STREAM_MUSIC, v, 0)
-        return "Volume ${v * 100 / max}%"
+        return a.getString(R.string.hud_volume, v * 100 / max)
     }
 }

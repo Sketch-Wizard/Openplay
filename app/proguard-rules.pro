@@ -1,0 +1,7 @@
+# FFmpeg decoder library (JNI + loaded by name)
+-keep class io.github.anilbeesetti.nextlib.** { *; }
+-keep class androidx.media3.decoder.** { *; }
+-keepclasseswithmembernames class * { native <methods>; }
+-dontwarn org.checkerframework.**
+-dontwarn javax.annotation.**
+-dontwarn com.google.errorprone.annotations.**

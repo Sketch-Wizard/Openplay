@@ -13,6 +13,8 @@ object Prefs {
     fun setFloat(c: Context, k: String, v: Float) = sp(c).edit().putFloat(k, v).apply()
     fun bool(c: Context, k: String, d: Boolean) = sp(c).getBoolean(k, d)
     fun setBool(c: Context, k: String, v: Boolean) = sp(c).edit().putBoolean(k, v).apply()
+    fun str(c: Context, k: String, d: String) = sp(c).getString(k, d) ?: d
+    fun setStr(c: Context, k: String, v: String) = sp(c).edit().putString(k, v).apply()
 }
 
 /** 0 = follow system, 1 = light, 2 = dark */

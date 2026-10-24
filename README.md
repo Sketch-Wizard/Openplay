@@ -1,39 +1,27 @@
 # OpenPlay
 
-An ad-free, open-source Android video player built on Jetpack Media3 (ExoPlayer) and Jetpack Compose.
+A free, open-source, ad-free Android video player built on Jetpack Media3 (ExoPlayer) and Jetpack Compose.
 
-## Features (v0.5)
-- Long-press menus for videos (rename, details, share, move, copy, move to private, delete) and folders (rename, details, move all to private, delete)
-- Private folder: 5-digit PIN with keypad, videos are moved out of the library into app-private storage, restore sends them back to their original folder (or Movies/Restored)
-- Settings: theme (system/light/dark), language, default orientation/speed/aspect ratio, background play, resume, feedback, about
-- Player option "Save as default" stores the current speed, orientation, aspect ratio and background-play choice
-- Redesigned home: header, tab pills, thumbnails, sorting (name/date/size/duration), list or grid view
-- New player UI: modern controls, collapsible options panel, playlist, audio/subtitle menus, orientation switch + rotation lock, landscape playback
-- Videos and Folders tabs (MediaStore, internal storage + SD card)
-- Network streaming (HTTP progressive, HLS, DASH)
-- Gestures: left side brightness, right side volume, horizontal swipe seek
-- Speed 0.25x–2x, aspect modes (Fit / Fill / Zoom)
-- External subtitles (SRT, VTT, ASS/SSA)
-- Background playback with media notification
-- Picture-in-Picture
-- Private folder with PIN (files moved to app-private storage)
-- Resume where you left off
-- "Open with" from other apps
+## Features (v0.6)
+- Plays almost any video: Media3 with FFmpeg software decoders (AC3, E-AC3, DTS, TrueHD audio; HEVC, VP9, ... as backup)
+- Decoder modes in Settings: HW (phone only), HW+ (default, software if needed), SW (FFmpeg first)
+- Modern home screen: bottom navigation, search, "Continue watching", thumbnails, sorting, list/grid
+- Player: thin timeline, controls under it, double-tap ±10 s, hold for 2x, brightness/volume/seek gestures,
+  audio and subtitle menus, playlist, orientation lock, Picture-in-Picture, background play
+- Long-press menus for videos and folders (rename, details, share, move, copy, private, delete)
+- Private folder with 5-digit PIN (stored inside the app; deleted if the app is uninstalled)
+- 12 languages: English, Spanish, Arabic, Hindi, Bengali, Portuguese, Russian, Japanese, French, German, Indonesian, Chinese
+- Light/dark/system theme and saved playback defaults
 
-## Formats
-Plays whatever Media3 and the device's codecs support: MP4, MKV, WebM, M4V, MOV, 3GP, TS, FLV; H.264, HEVC, VP9, AV1 (hardware dependent), 4K/HDR where the device allows.
-AVI, WMV, ASF, RMVB, RM, DIVX, VOB and OGM are played by a libVLC fallback engine (LGPL-2.1+). Any file ExoPlayer fails on is automatically retried in libVLC. The VLC engine has no background-play service yet.
-libVLC adds roughly 20–30 MB per ABI to the APK; per-ABI splits are enabled in app/build.gradle.kts.
-
-## Roadmap
-Chromecast, floating pop-up window, audio track picker, widgets, USB drives, encryption for the private folder, tests.
+## Not supported
+AVI, WMV and RMVB containers (ExoPlayer cannot read them).
 
 ## Build
-Open in Android Studio (Koala or newer), sync, run. This code has not been compiled by its author tool; expect to fix small issues on first build.
+Open in Android Studio (Koala or newer), or push to GitHub: the "Build APK" workflow produces release APKs
+(arm64-v8a and armeabi-v7a) as the `OpenPlay-release-apk` artifact. Install the arm64-v8a file on modern phones.
+
+`openplay.keystore` is a **test signing key committed on purpose** so builds update over each other.
+Create your own private key before publishing to any store.
 
 ## License
-MIT for OpenPlay's own code. libVLC is LGPL-2.1+; keep it dynamically linked and credit VideoLAN when you distribute.
-
-## Build without Android Studio
-Push this repo to GitHub. The "Build APK" workflow (.github/workflows/build.yml) builds it automatically.
-Open the Actions tab, pick the latest run, and download the OpenPlay-debug-apk artifact.
+GPL-3.0-or-later (required because the FFmpeg decoder library NextLib is GPL-3.0). See LICENSE.

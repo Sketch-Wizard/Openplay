@@ -1,5 +1,6 @@
 package org.openplay.player
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -32,30 +34,30 @@ sealed interface Dlg {
 
 class Pending(val then: (() -> Unit)?, val denied: (() -> Unit)?)
 
-typealias MenuEntry = Triple<Act, ImageVector, String>
+typealias MenuEntry = Triple<Act, ImageVector, Int>
 
 val videoMenu: List<MenuEntry> = listOf(
-    Triple(Act.Rename, Icons.Rounded.Edit, "Rename"),
-    Triple(Act.Details, Icons.Rounded.Info, "Details"),
-    Triple(Act.Share, Icons.Rounded.Share, "Share"),
-    Triple(Act.Move, Icons.Rounded.FolderOpen, "Move to…"),
-    Triple(Act.Copy, Icons.Rounded.ContentCopy, "Copy to…"),
-    Triple(Act.Private, Icons.Rounded.Lock, "Move to private"),
-    Triple(Act.Delete, Icons.Rounded.Delete, "Delete")
+    Triple(Act.Rename, Icons.Rounded.Edit, R.string.rename),
+    Triple(Act.Details, Icons.Rounded.Info, R.string.details),
+    Triple(Act.Share, Icons.Rounded.Share, R.string.share),
+    Triple(Act.Move, Icons.Rounded.FolderOpen, R.string.move_to),
+    Triple(Act.Copy, Icons.Rounded.ContentCopy, R.string.copy_to),
+    Triple(Act.Private, Icons.Rounded.Lock, R.string.move_private),
+    Triple(Act.Delete, Icons.Rounded.Delete, R.string.delete)
 )
 
 val folderMenu: List<MenuEntry> = listOf(
-    Triple(Act.Rename, Icons.Rounded.Edit, "Rename folder"),
-    Triple(Act.Details, Icons.Rounded.Info, "Details"),
-    Triple(Act.Private, Icons.Rounded.Lock, "Move all to private"),
-    Triple(Act.Delete, Icons.Rounded.Delete, "Delete folder")
+    Triple(Act.Rename, Icons.Rounded.Edit, R.string.rename_folder),
+    Triple(Act.Details, Icons.Rounded.Info, R.string.details),
+    Triple(Act.Private, Icons.Rounded.Lock, R.string.move_all_private),
+    Triple(Act.Delete, Icons.Rounded.Delete, R.string.delete_folder)
 )
 
 val vaultMenu: List<MenuEntry> = listOf(
-    Triple(Act.Play, Icons.Rounded.PlayArrow, "Play"),
-    Triple(Act.Restore, Icons.Rounded.LockOpen, "Remove from private"),
-    Triple(Act.Details, Icons.Rounded.Info, "Details"),
-    Triple(Act.Delete, Icons.Rounded.Delete, "Delete")
+    Triple(Act.Play, Icons.Rounded.PlayArrow, R.string.play),
+    Triple(Act.Restore, Icons.Rounded.LockOpen, R.string.remove_private),
+    Triple(Act.Details, Icons.Rounded.Info, R.string.details),
+    Triple(Act.Delete, Icons.Rounded.Delete, R.string.delete)
 )
 
 @Composable
@@ -67,13 +69,13 @@ fun ActionSheet(title: String, actions: List<MenuEntry>, onPick: (Act) -> Unit, 
             Column {
                 actions.forEach { (act, icon, label) ->
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onPick(act) }
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onPick(act) }
                             .padding(horizontal = 8.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(icon, null)
+                        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(16.dp))
-                        Text(label)
+                        Text(stringResource(label))
                     }
                 }
             }
@@ -85,17 +87,17 @@ fun ActionSheet(title: String, actions: List<MenuEntry>, onPick: (Act) -> Unit, 
 fun RenameDialog(initial: String, onOk: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf(initial) }
     AlertDialog(
-        onDismissRequest = onDismiss, title = { Text("Rename") },
+        onDismissRequest = onDismiss, title = { Text(stringResource(R.string.rename)) },
         text = { OutlinedTextField(text, { text = it }, singleLine = true) },
-        confirmButton = { TextButton(onClick = { if (text.isNotBlank()) onOk(text.trim()) }) { Text("Rename") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(onClick = { if (text.isNotBlank()) onOk(text.trim()) }) { Text(stringResource(R.string.rename)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }
 
 @Composable
 fun DetailsDialog(rows: List<Pair<String, String>>, onDismiss: () -> Unit) {
     AlertDialog(
-        onDismissRequest = onDismiss, title = { Text("Details") },
+        onDismissRequest = onDismiss, title = { Text(stringResource(R.string.details)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 rows.forEach { (k, v) ->
@@ -107,7 +109,7 @@ fun DetailsDialog(rows: List<Pair<String, String>>, onDismiss: () -> Unit) {
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } }
     )
 }
 
@@ -116,7 +118,7 @@ fun ConfirmDialog(title: String, text: String, confirm: String, onOk: () -> Unit
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text(title) }, text = { Text(text) },
         confirmButton = { TextButton(onClick = onOk) { Text(confirm) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }
 
@@ -135,6 +137,6 @@ fun ChoiceDialog(title: String, options: List<String>, selected: Int, onPick: (I
                 }
             }
         },
-        confirmButton = {}, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = {}, dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }

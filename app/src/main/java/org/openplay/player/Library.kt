@@ -13,8 +13,8 @@ data class Video(
     val relPath: String, val size: Long, val dateAdded: Long, val mime: String, val width: Int, val height: Int
 )
 
-enum class SortKey(val label: String) {
-    NAME("Name"), DATE("Date added"), SIZE("Size"), DURATION("Duration")
+enum class SortKey(val label: Int) {
+    NAME(R.string.sort_name), DATE(R.string.sort_date), SIZE(R.string.sort_size), DURATION(R.string.sort_duration)
 }
 
 fun List<Video>.sortVideos(key: SortKey, asc: Boolean): List<Video> {
