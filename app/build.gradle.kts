@@ -18,6 +18,7 @@ android {
             // Test key kept in the repo on purpose so every build is signed the same way
             // and updates install over older builds. Make a private key before any store release.
             storeFile = file("../openplay.keystore")
+            storeType = "pkcs12"
             storePassword = "openplay123"
             keyAlias = "openplay"
             keyPassword = "openplay123"

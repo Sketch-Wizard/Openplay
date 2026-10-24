@@ -224,6 +224,10 @@ fun Root() {
         )
     }
 
+    val recentsHeader: @Composable () -> Unit = {
+        RecentsRow(recentsShown) { r -> ctx.openPlayer(listOf(PlItem(r.uri, r.title)), 0) }
+    }
+
     val onVideoLong: (Video) -> Unit = { v -> dlg = Dlg.Menu(MenuTarget(v.title, listOf(v), false)) }
     val onFolderLong: (List<Video>) -> Unit = { l -> dlg = Dlg.Menu(MenuTarget(l.first().folder, l, true)) }
 
@@ -256,9 +260,7 @@ fun Root() {
                             Button(onClick = { permLauncher.launch(perm) }) { Text(stringResource(R.string.grant_access)) }
                         }
                         tab == 0 -> VideoCollection(shown, grid, onVideoLong,
-                            header = if (q.isEmpty() && recentsShown.isNotEmpty()) ({
-                                RecentsRow(recentsShown) { r -> ctx.openPlayer(listOf(PlItem(r.uri, r.title)), 0) }
-                            }) else null
+                            header = if (q.isEmpty() && recentsShown.isNotEmpty()) recentsHeader else null
                         ) { i -> ctx.openPlayer(shown.map { PlItem(it.uri, it.title) }, i) }
                         tab == 1 -> FoldersScreen(sorted, grid, q, onVideoLong, onFolderLong)
                         tab == 2 -> StreamScreen()

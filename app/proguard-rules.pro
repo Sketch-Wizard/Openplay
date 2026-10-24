@@ -5,3 +5,7 @@
 -dontwarn org.checkerframework.**
 -dontwarn javax.annotation.**
 -dontwarn com.google.errorprone.annotations.**
+-ignorewarnings
+-dontwarn org.jspecify.annotations.**
+-dontwarn kotlin.**
+-dontwarn androidx.media3.**
