@@ -85,4 +85,10 @@
     <string name="pin_create">৫ অঙ্কের পিন তৈরি করুন</string>
     <string name="pin_confirm">আপনার পিন নিশ্চিত করুন</string>
     <string name="pin_wrong">ভুল পিন</string>
+    <string name="add_private">ভিডিও যোগ করুন</string>
+    <string name="private_search_hint">ব্যক্তিগত ভিডিও খুঁজুন</string>
+    <string name="move_n_private">%dটি ব্যক্তিগতে সরান</string>
+    <string name="select_videos">ভিডিও নির্বাচন করুন</string>
+    <string name="opt_loop">পুনরাবৃত্তি</string>
+    <string name="opt_options">বিকল্প</string>
 </resources>

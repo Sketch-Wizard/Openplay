@@ -85,4 +85,10 @@
     <string name="pin_create">Buat PIN 5 digit</string>
     <string name="pin_confirm">Konfirmasi PIN Anda</string>
     <string name="pin_wrong">PIN salah</string>
+    <string name="add_private">Tambah video</string>
+    <string name="private_search_hint">Cari video pribadi</string>
+    <string name="move_n_private">Pindahkan %d ke pribadi</string>
+    <string name="select_videos">Pilih video</string>
+    <string name="opt_loop">Ulangi</string>
+    <string name="opt_options">Opsi</string>
 </resources>

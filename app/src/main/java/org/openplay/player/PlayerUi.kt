@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package org.openplay.player
 
 import androidx.compose.animation.AnimatedVisibility
@@ -5,7 +7,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -13,10 +17,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -46,6 +48,8 @@ class PlayerUiState {
     var duration by mutableLongStateOf(0L)
     var speed by mutableFloatStateOf(1f)
     var bgPlay by mutableStateOf(false)
+    var loop by mutableStateOf(false)
+    var decoder by mutableIntStateOf(1)
     var orientation by mutableIntStateOf(0)
     var rotationLocked by mutableStateOf(false)
     var audioNames by mutableStateOf<List<String>>(emptyList())
@@ -57,13 +61,15 @@ class PlayerUiState {
     var resizeIndex by mutableIntStateOf(0)
     var inPip by mutableStateOf(false)
     var hud by mutableStateOf<String?>(null)
+    var seekInfo by mutableStateOf<String?>(null)
     var boost by mutableStateOf(false)
 }
 
 class PlayerActions(
     val onBack: () -> Unit, val onTogglePlay: () -> Unit, val onSeek: (Long) -> Unit,
-    val onSeekBy: (Long) -> Unit, val onSpeed: (Float) -> Unit, val onBgToggle: () -> Unit,
-    val onRotate: () -> Unit, val onLockToggle: () -> Unit, val onAudio: (Int) -> Unit,
+    val onSeekBy: (Long) -> Unit, val onGetPosition: () -> Long, val onSpeed: (Float) -> Unit,
+    val onBgToggle: () -> Unit, val onRotate: () -> Unit, val onLockToggle: () -> Unit,
+    val onLoop: () -> Unit, val onDecoder: (Int) -> Unit, val onAudio: (Int) -> Unit,
     val onSub: (Int) -> Unit, val onLoadSub: () -> Unit, val onPlayItem: (Int) -> Unit,
     val onNext: () -> Unit, val onPrev: () -> Unit, val onResize: () -> Unit,
     val onBrightness: (Float) -> Unit, val onVolumeSteps: (Int) -> Unit,
@@ -76,9 +82,12 @@ fun fmtTime(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
-private enum class Sheet { None, Speed, Audio, Subs, Playlist }
+fun fmtSpeed(v: Float): String = if (v % 1f == 0f) "${v.toInt()}x" else "${v}x"
+
+private enum class Sheet { None, Speed, Audio, Subs, Playlist, Decoder }
 private val accent = Color(0xFFFFA040)
-private val speedList = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+private val speedList = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+private class Opt(val icon: ImageVector, val label: String, val active: Boolean, val onClick: () -> Unit)
 
 @Composable
 fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
@@ -88,16 +97,28 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
     var sheet by remember { mutableStateOf(Sheet.None) }
     var touch by remember { mutableIntStateOf(0) }
     var drag by remember { mutableStateOf<Float?>(null) }
-    val orientLabels = listOf(R.string.orient_auto, R.string.orient_landscape, R.string.orient_portrait).map { stringResource(it) }
-    val aspectLabels = listOf(R.string.aspect_fit, R.string.aspect_fill, R.string.aspect_zoom).map { stringResource(it) }
-    val onTxt = stringResource(R.string.on)
+    var tip by remember { mutableStateOf<String?>(null) }
     val offTxt = stringResource(R.string.off)
+    val decoderLabels = listOf(R.string.dec_hw, R.string.dec_hwplus, R.string.dec_sw).map { stringResource(it) }
 
     LaunchedEffect(visible, s.playing, sheet, options, touch) {
         if (visible && s.playing && sheet == Sheet.None) { delay(4000); visible = false; options = false }
     }
     LaunchedEffect(s.hud) { if (s.hud != null) { delay(900); s.hud = null } }
+    LaunchedEffect(tip) { if (tip != null) { delay(1600); tip = null } }
     fun act(f: () -> Unit) { touch++; f() }
+
+    val opts = listOf(
+        Opt(Icons.Rounded.Speed, stringResource(R.string.opt_speed), false) { sheet = Sheet.Speed },
+        Opt(Icons.Rounded.Audiotrack, stringResource(R.string.opt_audio), false) { sheet = Sheet.Audio },
+        Opt(Icons.Rounded.AspectRatio, stringResource(R.string.opt_aspect), false) { a.onResize() },
+        Opt(Icons.Rounded.ScreenRotation, stringResource(R.string.opt_orientation), false) { a.onRotate() },
+        Opt(Icons.Rounded.ScreenLockRotation, stringResource(R.string.opt_lock_rotation), s.rotationLocked) { a.onLockToggle() },
+        Opt(Icons.Rounded.Headphones, stringResource(R.string.bg_play), s.bgPlay) { a.onBgToggle() },
+        Opt(Icons.Rounded.Repeat, stringResource(R.string.opt_loop), s.loop) { a.onLoop() },
+        Opt(Icons.Rounded.Memory, stringResource(R.string.decoder), false) { sheet = Sheet.Decoder },
+        Opt(Icons.Rounded.Save, stringResource(R.string.opt_save_default), false) { a.onSaveDefaults() }
+    )
 
     Box(
         Modifier.fillMaxSize()
@@ -110,22 +131,42 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
                     },
                     onLongPress = { holding = true; s.boost = true; a.onHold(true) },
                     onDoubleTap = { o ->
-                        val fwd = o.x >= size.width / 2
-                        a.onSeekBy(if (fwd) 10_000L else -10_000L)
-                        s.hud = if (fwd) "+10s" else "−10s"
+                        val w = size.width
+                        when {
+                            o.x < w * 0.35f -> { a.onSeekBy(-10_000L); s.hud = "−10s" }
+                            o.x > w * 0.65f -> { a.onSeekBy(10_000L); s.hud = "+10s" }
+                            else -> a.onTogglePlay()
+                        }
                     },
                     onTap = { visible = !visible; touch++ }
                 )
             }
             .pointerInput(Unit) {
                 var startX = 0f; var mode = 0; var acc = 0f
+                var startPos = 0L; var target = 0L; var ema = 0f
                 detectDragGestures(
-                    onDragStart = { startX = it.x; mode = 0; acc = 0f },
-                    onDrag = { _, d ->
-                        if (mode == 0 && (abs(d.x) > 2 || abs(d.y) > 2))
+                    onDragStart = { startX = it.x; mode = 0; acc = 0f; ema = 0f },
+                    onDragEnd = { if (mode == 1) s.seekInfo = null; mode = 0 },
+                    onDragCancel = { if (mode == 1) s.seekInfo = null; mode = 0 },
+                    onDrag = { change, d ->
+                        if (mode == 0 && (abs(d.x) > 2 || abs(d.y) > 2)) {
                             mode = if (abs(d.x) > abs(d.y)) 1 else if (startX < size.width / 2) 2 else 3
+                            if (mode == 1) { startPos = a.onGetPosition(); target = startPos }
+                        }
                         when (mode) {
-                            1 -> a.onSeekBy((d.x * 80).toLong())
+                            1 -> {
+                                // swipe intensity decides the speed: slow swipe = about a second at a time, fast swipe = much faster
+                                val dt = (change.uptimeMillis - change.previousUptimeMillis).coerceAtLeast(1L)
+                                val inst = abs(d.x) / dt
+                                ema = if (ema == 0f) inst else ema * 0.7f + inst * 0.3f
+                                val k = 0.03f + 0.14f * (ema.coerceAtMost(2f) / 2f)
+                                val dur = s.duration
+                                val next = target + (d.x * k * 1000f).toLong()
+                                target = if (dur > 0) next.coerceIn(0L, dur) else next.coerceAtLeast(0L)
+                                a.onSeek(target)
+                                val delta = target - startPos
+                                s.seekInfo = fmtTime(target) + "   [" + (if (delta >= 0) "+" else "−") + fmtTime(abs(delta)) + "]"
+                            }
                             2 -> a.onBrightness(-d.y / size.height)
                             3 -> { acc += -d.y; val st = (acc / 60f).toInt(); if (st != 0) { a.onVolumeSteps(st); acc -= st * 60f } }
                         }
@@ -137,6 +178,11 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
             Text(it, color = Color.White, fontSize = 18.sp,
                 modifier = Modifier.align(Alignment.Center).clip(RoundedCornerShape(14.dp))
                     .background(Color.Black.copy(alpha = 0.6f)).padding(horizontal = 18.dp, vertical = 10.dp))
+        }
+        s.seekInfo?.let {
+            Text(it, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.Center).offset(y = (-40).dp).clip(RoundedCornerShape(16.dp))
+                    .background(Color.Black.copy(alpha = 0.65f)).padding(horizontal = 22.dp, vertical = 12.dp))
         }
         if (s.boost) {
             Text(stringResource(R.string.boost), color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp,
@@ -155,27 +201,30 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
                     IconBtn(Icons.Rounded.ArrowBack, 26) { a.onBack() }
                     Text(s.title, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).padding(horizontal = 6.dp))
-                    IconBtn(Icons.Rounded.Subtitles, 24) { act { sheet = Sheet.Subs } }
-                    IconBtn(if (options) Icons.Rounded.ExpandLess else Icons.Rounded.Tune, 26) { act { options = !options } }
+                    IconBtn(Icons.Rounded.Subtitles, 24, if (s.subSel >= 0) accent else Color.White) { act { sheet = Sheet.Subs } }
+                    IconBtn(Icons.Rounded.Tune, 26, if (options) accent else Color.White) { act { options = !options } }
+                    IconBtn(Icons.Rounded.PlaylistPlay, 26) { act { sheet = Sheet.Playlist } }
                 }
 
                 AnimatedVisibility(
                     options, enter = fadeIn(), exit = fadeOut(),
-                    modifier = Modifier.align(Alignment.TopEnd).padding(top = 58.dp, end = 12.dp)
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)
                 ) {
-                    Column(
-                        Modifier.heightIn(max = 230.dp).clip(RoundedCornerShape(18.dp))
-                            .background(Color.Black.copy(alpha = 0.6f)).verticalScroll(rememberScrollState()).padding(6.dp)
-                    ) {
-                        OptionRow(Icons.Rounded.Speed, stringResource(R.string.opt_speed), "${s.speed}x") { act { sheet = Sheet.Speed } }
-                        OptionRow(Icons.Rounded.Headphones, stringResource(R.string.bg_play), if (s.bgPlay) onTxt else offTxt, s.bgPlay) { act { a.onBgToggle() } }
-                        OptionRow(Icons.Rounded.ScreenRotation, stringResource(R.string.opt_orientation), orientLabels[s.orientation]) { act { a.onRotate() } }
-                        OptionRow(Icons.Rounded.ScreenLockRotation, stringResource(R.string.opt_lock_rotation), if (s.rotationLocked) onTxt else offTxt, s.rotationLocked) { act { a.onLockToggle() } }
-                        OptionRow(Icons.Rounded.Audiotrack, stringResource(R.string.opt_audio)) { act { sheet = Sheet.Audio } }
-                        OptionRow(Icons.Rounded.Subtitles, stringResource(R.string.opt_subs)) { act { sheet = Sheet.Subs } }
-                        OptionRow(Icons.Rounded.AspectRatio, stringResource(R.string.opt_aspect), aspectLabels[s.resizeIndex]) { act { a.onResize() } }
-                        OptionRow(Icons.Rounded.PlaylistPlay, stringResource(R.string.opt_playlist), "${s.playlist.size}") { act { sheet = Sheet.Playlist } }
-                        OptionRow(Icons.Rounded.Save, stringResource(R.string.opt_save_default)) { act { a.onSaveDefaults() } }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        tip?.let {
+                            Text(it, color = Color.White, fontSize = 13.sp,
+                                modifier = Modifier.padding(end = 8.dp).clip(RoundedCornerShape(10.dp))
+                                    .background(Color.Black.copy(alpha = 0.8f)).padding(horizontal = 10.dp, vertical = 6.dp))
+                        }
+                        Column(Modifier.clip(RoundedCornerShape(18.dp)).background(Color.Black.copy(alpha = 0.55f)).padding(6.dp)) {
+                            opts.chunked(3).forEach { row ->
+                                Row {
+                                    row.forEach { o ->
+                                        GridIcon(o.icon, o.active, onClick = { act { o.onClick() } }, onLongPress = { touch++; tip = o.label })
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -220,8 +269,7 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
 
         val close = { sheet = Sheet.None }
         when (sheet) {
-            Sheet.Speed -> SheetList(stringResource(R.string.playback_speed), speedList.map { "${it}x" }, speedList.indexOf(s.speed),
-                { a.onSpeed(speedList[it]); close() }, close)
+            Sheet.Speed -> SpeedSheet(stringResource(R.string.playback_speed), s.speed, { a.onSpeed(it); close() }, close)
             Sheet.Audio -> SheetList(stringResource(R.string.opt_audio), s.audioNames.ifEmpty { listOf(stringResource(R.string.no_audio)) }, s.audioSel,
                 { if (s.audioNames.isNotEmpty()) a.onAudio(it); close() }, close)
             Sheet.Subs -> {
@@ -233,6 +281,7 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
             }
             Sheet.Playlist -> SheetList(stringResource(R.string.opt_playlist), s.playlist.map { it.title.ifBlank { "Video" } }, s.index,
                 { a.onPlayItem(it); close() }, close)
+            Sheet.Decoder -> SheetList(stringResource(R.string.decoder), decoderLabels, s.decoder, { a.onDecoder(it); close() }, close)
             Sheet.None -> {}
         }
     }
@@ -266,17 +315,44 @@ private fun IconBtn(icon: ImageVector, size: Int, tint: Color = Color.White, onC
     IconButton(onClick, Modifier.size(48.dp)) { Icon(icon, null, tint = tint, modifier = Modifier.size(size.dp)) }
 }
 
+/** Icon-only cell of the options grid. Orange = on, white = off. Long press shows its name. */
 @Composable
-private fun OptionRow(icon: ImageVector, label: String, value: String? = null, active: Boolean = false, onClick: () -> Unit) {
-    Row(
-        Modifier.widthIn(min = 210.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically
+private fun GridIcon(icon: ImageVector, active: Boolean, onClick: () -> Unit, onLongPress: () -> Unit) {
+    Box(
+        Modifier.size(46.dp).clip(CircleShape).combinedClickable(onClick = onClick, onLongClick = onLongPress),
+        contentAlignment = Alignment.Center
     ) {
-        Icon(icon, null, tint = if (active) accent else Color.White, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(12.dp))
-        Text(label, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-        if (value != null) Text(value, color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+        Icon(icon, null, tint = if (active) accent else Color.White, modifier = Modifier.size(24.dp))
+    }
+}
+
+@Composable
+private fun SpeedSheet(title: String, current: Float, onPick: (Float) -> Unit, onClose: () -> Unit) {
+    Box(
+        Modifier.fillMaxSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            Modifier.clip(RoundedCornerShape(24.dp)).background(Color.Black.copy(alpha = 0.82f)).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(title, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 6.dp))
+            speedList.chunked(4).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+                    row.forEach { v ->
+                        val sel = v == current
+                        Box(
+                            Modifier.size(62.dp).clip(CircleShape)
+                                .background(if (sel) accent else accent.copy(alpha = 0.25f))
+                                .border(2.dp, accent, CircleShape).clickable { onPick(v) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(fmtSpeed(v), color = if (sel) Color.Black else Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -291,6 +367,7 @@ private fun SheetList(title: String, entries: List<String>, selected: Int, onPic
             LazyColumn {
                 itemsIndexed(entries) { i, e ->
                     Text(e, color = if (i == selected) accent else Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        fontWeight = if (i == selected) FontWeight.Bold else FontWeight.Normal,
                         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onPick(i) }.padding(12.dp))
                 }
             }

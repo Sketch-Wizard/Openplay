@@ -85,4 +85,10 @@
     <string name="pin_create">Crie um PIN de 5 dígitos</string>
     <string name="pin_confirm">Confirme seu PIN</string>
     <string name="pin_wrong">PIN incorreto</string>
+    <string name="add_private">Adicionar vídeos</string>
+    <string name="private_search_hint">Pesquisar vídeos privados</string>
+    <string name="move_n_private">Mover %d para privado</string>
+    <string name="select_videos">Selecionar vídeos</string>
+    <string name="opt_loop">Repetir</string>
+    <string name="opt_options">Opções</string>
 </resources>

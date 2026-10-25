@@ -135,4 +135,10 @@
     <string name="hud_bg_on">Background play on</string>
     <string name="hud_bg_off">Background play off</string>
     <string name="hud_orient">Orientation: %1$s</string>
+    <string name="add_private">Add videos</string>
+    <string name="private_search_hint">Search private videos</string>
+    <string name="move_n_private">Move %d to private</string>
+    <string name="select_videos">Select videos</string>
+    <string name="opt_loop">Loop</string>
+    <string name="opt_options">Options</string>
 </resources>

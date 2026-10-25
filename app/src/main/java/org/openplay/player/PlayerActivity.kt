@@ -77,6 +77,7 @@ class PlayerActivity : ComponentActivity() {
         ui.speed = Prefs.float(this, "speed", 1f)
         ui.orientation = Prefs.int(this, "orient", 0)
         ui.bgPlay = Prefs.bool(this, "bg", false)
+        ui.decoder = Prefs.int(this, "decoder", 1)
         ui.resizeIndex = Prefs.int(this, "resize", 0).coerceIn(0, 2)
         if (ui.orientation != 0) applyOrientation(ui.orientation, false)
 
@@ -91,6 +92,7 @@ class PlayerActivity : ComponentActivity() {
                     c.seekTo(if (dur > 0) t.coerceIn(0L, dur) else t.coerceAtLeast(0L))
                 }
             },
+            onGetPosition = { controller?.currentPosition ?: 0L },
             onSpeed = { controller?.setPlaybackSpeed(it); ui.speed = it },
             onBgToggle = { ui.bgPlay = !ui.bgPlay; ui.hud = getString(if (ui.bgPlay) R.string.hud_bg_on else R.string.hud_bg_off) },
             onRotate = {
@@ -105,6 +107,12 @@ class PlayerActivity : ComponentActivity() {
                 applyOrientation(ui.orientation, ui.rotationLocked)
                 ui.hud = getString(if (ui.rotationLocked) R.string.hud_locked else R.string.hud_unlocked)
             },
+            onLoop = {
+                ui.loop = !ui.loop
+                controller?.repeatMode = if (ui.loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+                ui.hud = getString(R.string.opt_loop) + ": " + getString(if (ui.loop) R.string.on else R.string.off)
+            },
+            onDecoder = { changeDecoder(it) },
             onAudio = { selectAudio(it) },
             onSub = { selectSub(it) },
             onLoadSub = { pickSubtitle.launch(arrayOf("*/*")) },
@@ -167,6 +175,24 @@ class PlayerActivity : ComponentActivity() {
             c.setPlaybackSpeed(ui.speed)
             c.prepare(); c.play()
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun changeDecoder(mode: Int) {
+        val c = controller ?: return
+        if (mode == ui.decoder) return
+        val idx = c.currentMediaItemIndex
+        val pos = c.currentPosition
+        ui.decoder = mode
+        // the playback service builds a new player when this setting changes, then we reload the video
+        Prefs.setInt(this, "decoder", mode)
+        handler.postDelayed({
+            controller?.let { n ->
+                n.setMediaItems(items.map { MediaItem.fromUri(it.uri) }, idx, pos)
+                n.setPlaybackSpeed(ui.speed)
+                n.repeatMode = if (ui.loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+                n.prepare(); n.play()
+            }
+        }, 500)
     }
 
     private fun trackName(f: Format, i: Int): String =

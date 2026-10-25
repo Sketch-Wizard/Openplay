@@ -85,4 +85,10 @@
     <string name="pin_create">Создайте 5-значный PIN-код</string>
     <string name="pin_confirm">Подтвердите PIN-код</string>
     <string name="pin_wrong">Неверный PIN-код</string>
+    <string name="add_private">Добавить видео</string>
+    <string name="private_search_hint">Поиск в личных видео</string>
+    <string name="move_n_private">Переместить в личное: %d</string>
+    <string name="select_videos">Выберите видео</string>
+    <string name="opt_loop">Повтор</string>
+    <string name="opt_options">Параметры</string>
 </resources>

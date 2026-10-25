@@ -118,6 +118,7 @@ fun Root() {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    var openFolder by rememberSaveable { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
     var vaultKey by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf<String?>(null) }
@@ -147,6 +148,10 @@ fun Root() {
     val shown = remember(sorted, q) { if (q.isEmpty()) sorted else sorted.filter { it.title.contains(q, ignoreCase = true) } }
     val folderCount = remember(sorted, q) {
         sorted.groupBy { it.folderKey }.values.count { q.isEmpty() || it.first().folder.contains(q, ignoreCase = true) }
+    }
+    val folderHits = remember(sorted, q) {
+        if (q.isEmpty()) emptyList()
+        else sorted.groupBy { it.folderKey }.entries.filter { it.value.first().folder.contains(q, ignoreCase = true) }
     }
     val recentsShown = remember(recents, videos) { recents.filter { r -> videos.any { it.uri == r.uri } } }
 
@@ -228,6 +233,29 @@ fun Root() {
         RecentsRow(recentsShown) { r -> ctx.openPlayer(listOf(PlItem(r.uri, r.title)), 0) }
     }
 
+    val folderHitsHeader: @Composable () -> Unit = {
+        Column(Modifier.padding(bottom = 8.dp)) {
+            Text(stringResource(R.string.nav_folders), style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+            folderHits.take(5).forEach { e ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        .clickable { openFolder = e.key; tab = 0; query = ""; searchOpen = false }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.Folder, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(e.value.first().folder, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(stringResource(R.string.videos_count, e.value.size), fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
+                }
+            }
+        }
+    }
+
     val onVideoLong: (Video) -> Unit = { v -> dlg = Dlg.Menu(MenuTarget(v.title, listOf(v), false)) }
     val onFolderLong: (List<Video>) -> Unit = { l -> dlg = Dlg.Menu(MenuTarget(l.first().folder, l, true)) }
 
@@ -245,7 +273,7 @@ fun Root() {
         ) { pad ->
             Column(Modifier.padding(pad).fillMaxSize()) {
                 if (tab < 2 && granted) {
-                    val count = if (tab == 0) stringResource(R.string.videos_count, shown.size)
+                    val count = if (tab == 1 || q.isNotEmpty()) stringResource(R.string.videos_count, shown.size)
                     else stringResource(R.string.folders_count, folderCount)
                     Toolbar(count, sortKey, asc, grid,
                         onSort = { sortKey = it; prefs.edit().putInt("sort", it.ordinal).apply() },
@@ -259,12 +287,16 @@ fun Root() {
                             Spacer(Modifier.height(8.dp))
                             Button(onClick = { permLauncher.launch(perm) }) { Text(stringResource(R.string.grant_access)) }
                         }
-                        tab == 0 -> VideoCollection(shown, grid, onVideoLong,
-                            header = if (q.isEmpty() && recentsShown.isNotEmpty()) recentsHeader else null
+                        tab < 2 && q.isNotEmpty() -> VideoCollection(shown, grid, onVideoLong,
+                            header = if (folderHits.isNotEmpty()) folderHitsHeader else null
                         ) { i -> ctx.openPlayer(shown.map { PlItem(it.uri, it.title) }, i) }
-                        tab == 1 -> FoldersScreen(sorted, grid, q, onVideoLong, onFolderLong)
+                        tab == 0 -> FoldersScreen(sorted, grid, openFolder, { openFolder = it }, onVideoLong, onFolderLong,
+                            header = if (recentsShown.isNotEmpty()) recentsHeader else null)
+                        tab == 1 -> VideoCollection(shown, grid, onVideoLong,
+                            header = if (recentsShown.isNotEmpty()) recentsHeader else null
+                        ) { i -> ctx.openPlayer(shown.map { PlItem(it.uri, it.title) }, i) }
                         tab == 2 -> StreamScreen()
-                        else -> PrivateScreen(vaultKey, onChanged = { reload++ }, setBusy = { busy = it })
+                        else -> PrivateScreen(vaultKey, videos, onAdd = { doLock(it) }, onChanged = { reload++ }, setBusy = { busy = it })
                     }
                 }
             }
@@ -367,7 +399,7 @@ fun Header(
 @Composable
 fun NavBar(selected: Int, onSelect: (Int) -> Unit) {
     val items: List<Pair<Int, ImageVector>> = listOf(
-        R.string.nav_videos to Icons.Rounded.VideoLibrary, R.string.nav_folders to Icons.Rounded.Folder,
+        R.string.nav_folders to Icons.Rounded.Folder, R.string.nav_videos to Icons.Rounded.VideoLibrary,
         R.string.nav_stream to Icons.Rounded.Link, R.string.nav_private to Icons.Rounded.Lock
     )
     NavigationBar {
@@ -432,17 +464,26 @@ private fun DurationBadge(ms: Long, modifier: Modifier) {
 
 @Composable
 fun RecentsRow(recents: List<Recent>, onOpen: (Recent) -> Unit) {
-    Column(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
-        Text(stringResource(R.string.continue_watching), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    val primary = MaterialTheme.colorScheme.primary
+    Column(
+        Modifier.padding(horizontal = 4.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
+            .background(Brush.verticalGradient(listOf(primary.copy(alpha = 0.18f), primary.copy(alpha = 0.06f))))
+            .padding(bottom = 12.dp)
+    ) {
+        Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.History, null, tint = primary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.continue_watching), style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold, color = primary)
+        }
+        LazyRow(contentPadding = PaddingValues(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(recents, key = { it.uri.toString() }) { r ->
                 Column(Modifier.width(170.dp).clip(RoundedCornerShape(12.dp)).clickable { onOpen(r) }) {
                     Box {
                         Thumb(r.uri, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                         val frac = if (r.durMs > 0) (r.posMs.toFloat() / r.durMs).coerceIn(0f, 1f) else 0f
                         Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(3.dp).background(Color.White.copy(alpha = 0.3f)))
-                        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(frac).height(3.dp).background(MaterialTheme.colorScheme.primary))
+                        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(frac).height(3.dp).background(primary))
                     }
                     Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
                 }
@@ -505,36 +546,39 @@ fun VideoCollection(
 
 @Composable
 fun FoldersScreen(
-    videos: List<Video>, grid: Boolean, q: String,
-    onVideoLong: (Video) -> Unit, onFolderLong: (List<Video>) -> Unit
+    videos: List<Video>, grid: Boolean, open: String?, onOpen: (String?) -> Unit,
+    onVideoLong: (Video) -> Unit, onFolderLong: (List<Video>) -> Unit,
+    header: (@Composable () -> Unit)? = null
 ) {
     val ctx = LocalContext.current
-    var open by rememberSaveable { mutableStateOf<String?>(null) }
-    BackHandler(open != null) { open = null }
+    BackHandler(open != null) { onOpen(null) }
     val groups = remember(videos) { videos.groupBy { it.folderKey }.toSortedMap(String.CASE_INSENSITIVE_ORDER) }
     val current = open
     if (current != null) {
-        val all = groups[current].orEmpty()
-        val list = if (q.isEmpty()) all else all.filter { it.title.contains(q, ignoreCase = true) }
+        val list = groups[current].orEmpty()
         Column {
-            Row(Modifier.fillMaxWidth().clickable { open = null }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickable { onOpen(null) }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.ArrowBack, null)
                 Spacer(Modifier.width(8.dp))
-                Text(all.firstOrNull()?.folder ?: current, fontWeight = FontWeight.Bold)
+                Text(list.firstOrNull()?.folder ?: current, fontWeight = FontWeight.Bold)
             }
             VideoCollection(list, grid, onVideoLong) { i -> ctx.openPlayer(list.map { PlItem(it.uri, it.title) }, i) }
         }
         return
     }
-    val folders = groups.entries.filter { q.isEmpty() || it.value.first().folder.contains(q, ignoreCase = true) }
-    if (folders.isEmpty()) { Text(stringResource(R.string.no_folders), Modifier.padding(24.dp)); return }
+    val folders = groups.entries.toList()
+    if (folders.isEmpty()) {
+        Column { header?.invoke(); Text(stringResource(R.string.no_folders), Modifier.padding(24.dp)) }
+        return
+    }
     if (grid) {
         LazyVerticalGrid(
             GridCells.Adaptive(160.dp), contentPadding = PaddingValues(12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            if (header != null) item(span = { GridItemSpan(maxLineSpan) }) { header() }
             items(folders, key = { it.key }) { e ->
-                Column(Modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = { open = e.key }, onLongClick = { onFolderLong(e.value) })) {
+                Column(Modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = { onOpen(e.key) }, onLongClick = { onFolderLong(e.value) })) {
                     Thumb(e.value.first().uri, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                     Text(e.value.first().folder, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 6.dp))
                     Text(stringResource(R.string.videos_count, e.value.size), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
@@ -543,10 +587,11 @@ fun FoldersScreen(
         }
     } else {
         LazyColumn(contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+            if (header != null) item { header() }
             items(folders, key = { it.key }) { e ->
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                        .combinedClickable(onClick = { open = e.key }, onLongClick = { onFolderLong(e.value) }).padding(8.dp),
+                        .combinedClickable(onClick = { onOpen(e.key) }, onLongClick = { onFolderLong(e.value) }).padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Thumb(e.value.first().uri, Modifier.width(110.dp).aspectRatio(16f / 9f))

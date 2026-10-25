@@ -10,10 +10,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Backspace
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,7 +38,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun PrivateScreen(refreshKey: Int, onChanged: () -> Unit, setBusy: (String?) -> Unit) {
+fun PrivateScreen(refreshKey: Int, library: List<Video>, onAdd: (List<Video>) -> Unit, onChanged: () -> Unit, setBusy: (String?) -> Unit) {
     val activity = LocalContext.current as ComponentActivity
     var unlocked by remember { mutableStateOf(false) }
     DisposableEffect(Unit) {
@@ -45,7 +49,7 @@ fun PrivateScreen(refreshKey: Int, onChanged: () -> Unit, setBusy: (String?) -> 
         activity.lifecycle.addObserver(obs)
         onDispose { activity.lifecycle.removeObserver(obs) }
     }
-    if (!unlocked) PinScreen { unlocked = true } else VaultList(refreshKey, onChanged, setBusy)
+    if (!unlocked) PinScreen { unlocked = true } else VaultList(refreshKey, library, onAdd, onChanged, setBusy)
 }
 
 @Composable
@@ -122,7 +126,10 @@ private fun PinScreen(onUnlocked: () -> Unit) {
 }
 
 @Composable
-private fun VaultList(refreshKey: Int, onChanged: () -> Unit, setBusy: (String?) -> Unit) {
+private fun VaultList(
+    refreshKey: Int, library: List<Video>, onAdd: (List<Video>) -> Unit,
+    onChanged: () -> Unit, setBusy: (String?) -> Unit
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var tick by remember { mutableIntStateOf(0) }
@@ -130,37 +137,61 @@ private fun VaultList(refreshKey: Int, onChanged: () -> Unit, setBusy: (String?)
     var menu by remember { mutableStateOf<VaultItem?>(null) }
     var details by remember { mutableStateOf<VaultItem?>(null) }
     var confirmDelete by remember { mutableStateOf<VaultItem?>(null) }
+    var q by remember { mutableStateOf("") }
+    var picker by remember { mutableStateOf(false) }
 
     LaunchedEffect(refreshKey, tick) { items = withContext(Dispatchers.IO) { Vault.list(ctx) } }
+    val shown = remember(items, q) { if (q.isBlank()) items else items.filter { it.name.contains(q.trim(), ignoreCase = true) } }
 
     fun play(i: Int) {
         Vault.launchingPlayer = true
-        ctx.openPlayer(items.map { PlItem(Uri.fromFile(Vault.file(ctx, it)), it.name) }, i)
+        ctx.openPlayer(shown.map { PlItem(Uri.fromFile(Vault.file(ctx, it)), it.name) }, i)
     }
 
-    if (items.isEmpty()) Text(stringResource(R.string.private_empty), Modifier.padding(24.dp))
-    LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
-        itemsIndexed(items, key = { _, v -> v.id }) { i, v ->
-            Row(
-                Modifier.fillMaxWidth().combinedClickable(onClick = { play(i) }, onLongClick = { menu = v }).padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            OutlinedTextField(
+                q, { q = it }, singleLine = true, shape = RoundedCornerShape(28.dp),
+                leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                placeholder = { Text(stringResource(R.string.private_search_hint)) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+            if (items.isEmpty()) Text(stringResource(R.string.private_empty), Modifier.padding(24.dp))
+            LazyColumn(
+                Modifier.weight(1f),
+                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 88.dp)
             ) {
-                Thumb(Uri.fromFile(Vault.file(ctx, v)), Modifier.width(132.dp).aspectRatio(16f / 9f))
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(v.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-                    Text("${fmtTime(v.durationMs)} · ${fmtSize(v.size)}", fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                itemsIndexed(shown, key = { _, v -> v.id }) { i, v ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                            .combinedClickable(onClick = { play(i) }, onLongClick = { menu = v }).padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Thumb(Uri.fromFile(Vault.file(ctx, v)), Modifier.width(128.dp).aspectRatio(16f / 9f))
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(v.name, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                            Text("${fmtTime(v.durationMs)} · ${fmtSize(v.size)}", fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        }
+                    }
                 }
             }
         }
+        FloatingActionButton(
+            onClick = { picker = true },
+            containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+        ) { Icon(Icons.Rounded.Add, stringResource(R.string.add_private)) }
     }
+
+    if (picker) LibraryPicker(library, onDone = { picker = false; if (it.isNotEmpty()) onAdd(it) }, onDismiss = { picker = false })
 
     menu?.let { m ->
         ActionSheet(m.name, vaultMenu, onPick = { a ->
             menu = null
             when (a) {
-                Act.Play -> play(items.indexOf(m).coerceAtLeast(0))
+                Act.Play -> play(shown.indexOf(m).coerceAtLeast(0))
                 Act.Details -> details = m
                 Act.Delete -> confirmDelete = m
                 Act.Restore -> scope.launch {
@@ -187,4 +218,42 @@ private fun VaultList(refreshKey: Int, onChanged: () -> Unit, setBusy: (String?)
         ConfirmDialog(stringResource(R.string.delete_video_q), stringResource(R.string.delete_video_msg, m.name), stringResource(R.string.delete),
             onOk = { Vault.remove(ctx, m); confirmDelete = null; tick++ }, onDismiss = { confirmDelete = null })
     }
+}
+
+@Composable
+private fun LibraryPicker(library: List<Video>, onDone: (List<Video>) -> Unit, onDismiss: () -> Unit) {
+    var q by remember { mutableStateOf("") }
+    val selected = remember { mutableStateListOf<String>() }
+    val list = remember(library, q) { library.filter { q.isBlank() || it.title.contains(q.trim(), ignoreCase = true) } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.select_videos)) },
+        text = {
+            Column {
+                OutlinedTextField(q, { q = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(stringResource(R.string.search_hint)) })
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(list, key = { it.uri.toString() }) { v ->
+                        val k = v.uri.toString()
+                        val on = selected.contains(k)
+                        Row(
+                            Modifier.fillMaxWidth().clickable { if (on) selected.remove(k) else selected.add(k) }.padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(checked = on, onCheckedChange = { if (on) selected.remove(k) else selected.add(k) })
+                            Thumb(v.uri, Modifier.width(72.dp).aspectRatio(16f / 9f))
+                            Spacer(Modifier.width(10.dp))
+                            Text(v.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = selected.isNotEmpty(), onClick = { onDone(library.filter { selected.contains(it.uri.toString()) }) }) {
+                Text(stringResource(R.string.move_n_private, selected.size))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
+    )
 }

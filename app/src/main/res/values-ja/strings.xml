@@ -85,4 +85,10 @@
     <string name="pin_create">5桁の PIN を作成</string>
     <string name="pin_confirm">PIN を確認</string>
     <string name="pin_wrong">PIN が違います</string>
+    <string name="add_private">動画を追加</string>
+    <string name="private_search_hint">プライベート動画を検索</string>
+    <string name="move_n_private">%d 件をプライベートへ移動</string>
+    <string name="select_videos">動画を選択</string>
+    <string name="opt_loop">リピート</string>
+    <string name="opt_options">オプション</string>
 </resources>

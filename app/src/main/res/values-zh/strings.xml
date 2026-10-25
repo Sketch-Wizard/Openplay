@@ -85,4 +85,10 @@
     <string name="pin_create">创建 5 位 PIN</string>
     <string name="pin_confirm">确认 PIN</string>
     <string name="pin_wrong">PIN 错误</string>
+    <string name="add_private">添加视频</string>
+    <string name="private_search_hint">搜索私密视频</string>
+    <string name="move_n_private">将 %d 个移至私密</string>
+    <string name="select_videos">选择视频</string>
+    <string name="opt_loop">循环</string>
+    <string name="opt_options">选项</string>
 </resources>

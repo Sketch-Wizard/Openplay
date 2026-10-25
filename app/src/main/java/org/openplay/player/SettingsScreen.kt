@@ -28,8 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private const val REPO = "https://github.com/Sketch-Wizard/Openplay"
-private const val VERSION = "0.6.0"
-private val speedValues = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+private const val VERSION = "0.7.0"
+private val speedValues = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {

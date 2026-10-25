@@ -85,4 +85,10 @@
     <string name="pin_create">أنشئ رمز PIN من 5 أرقام</string>
     <string name="pin_confirm">أكّد رمز PIN</string>
     <string name="pin_wrong">رمز PIN خاطئ</string>
+    <string name="add_private">إضافة فيديوهات</string>
+    <string name="private_search_hint">البحث في الفيديوهات الخاصة</string>
+    <string name="move_n_private">نقل %d إلى الخاص</string>
+    <string name="select_videos">اختر الفيديوهات</string>
+    <string name="opt_loop">تكرار</string>
+    <string name="opt_options">الخيارات</string>
 </resources>
