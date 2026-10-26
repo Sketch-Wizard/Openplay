@@ -4,7 +4,10 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private const val REPO = "https://github.com/Sketch-Wizard/Openplay"
-private const val VERSION = "0.8.0"
+private const val VERSION = "0.9.0"
 private val speedValues = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
 @Composable
@@ -43,6 +46,13 @@ fun SettingsScreen(onBack: () -> Unit) {
     var bg by remember { mutableStateOf(Prefs.bool(ctx, "bg", false)) }
     var resume by remember { mutableStateOf(Prefs.bool(ctx, "resume", true)) }
     var lang by remember { mutableStateOf(Prefs.str(ctx, "lang", "")) }
+    var af by remember { mutableStateOf(AllFiles.granted(ctx)) }
+    val activity = ctx as? ComponentActivity
+    DisposableEffect(Unit) {
+        val o = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) af = AllFiles.granted(ctx) }
+        activity?.lifecycle?.addObserver(o)
+        onDispose { activity?.lifecycle?.removeObserver(o) }
+    }
     val themes = listOf(R.string.theme_system, R.string.theme_light, R.string.theme_dark).map { stringResource(it) }
     val orients = listOf(R.string.orient_auto, R.string.orient_landscape, R.string.orient_portrait).map { stringResource(it) }
     val resizes = listOf(R.string.aspect_fit, R.string.aspect_fill, R.string.aspect_zoom).map { stringResource(it) }
@@ -88,6 +98,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
             )
+            if (AllFiles.supported()) {
+                ValueRow(Icons.Rounded.FolderOpen, stringResource(R.string.allfiles_title), stringResource(if (af) R.string.on else R.string.off)) {
+                    ctx.startActivity(AllFiles.settingsIntent(ctx))
+                }
+            }
             Section(stringResource(R.string.help))
             ValueRow(Icons.Rounded.Feedback, stringResource(R.string.feedback), stringResource(R.string.feedback_sub)) {
                 try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$REPO/issues"))) }

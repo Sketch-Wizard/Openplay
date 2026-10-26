@@ -95,4 +95,7 @@
     <string name="select_all">تحديد الكل</string>
     <string name="unselect_all">إلغاء تحديد الكل</string>
     <string name="n_selected">%d محدد</string>
+    <string name="allfiles_title">الوصول إلى جميع الملفات</string>
+    <string name="allfiles_open">فتح الإعدادات</string>
+    <string name="allfiles_skip">ليس الآن</string>
 </resources>

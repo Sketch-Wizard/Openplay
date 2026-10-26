@@ -2,14 +2,15 @@
 
 A free, open-source, ad-free Android video player built on Jetpack Media3 (ExoPlayer) and Jetpack Compose.
 
-## Features (v0.7)
+## Features (v0.9)
 - Plays almost any video: Media3 with FFmpeg software decoders (AC3, E-AC3, DTS, TrueHD audio; HEVC, VP9, ... as backup)
 - Decoder modes in Settings: HW (phone only), HW+ (default, software if needed), SW (FFmpeg first)
 - Home: opens on Folders; tabs Folders, Videos, Stream, Private; search finds videos in every folder; highlighted "Continue watching"; thumbnails, sorting, list/grid
 - Player: thin timeline with controls under it; swipe to seek (speed follows swipe intensity, live timestamp); double-tap left/right = -/+10 s, middle = play/pause; hold for 2x;
   3x3 icon options grid (long-press an icon for its name), round speed picker, subtitles/playlist in the top bar, Picture-in-Picture, background play, loop, HW/HW+/SW decoder
 - Long-press menus for videos and folders (rename, details, share, move, copy, private, delete)
-- Private folder with 5-digit PIN, its own search bar and a + button to move videos in from your library (stored inside the app; deleted if the app is uninstalled)
+- Private folder with 5-digit PIN, its own search icon, sort, list/grid and multi-select; a + button opens a full-screen folder browser to pick videos (stored inside the app; deleted if the app is uninstalled)
+- With "All files access" (Android 11+): videos move into the private folder silently and are restored to their exact original folder (Movies/Restored only if that folder is gone)
 - 12 languages: English, Spanish, Arabic, Hindi, Bengali, Portuguese, Russian, Japanese, French, German, Indonesian, Chinese
 - Light/dark/system theme and saved playback defaults
 

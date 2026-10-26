@@ -127,9 +127,12 @@ fun Root() {
     var dlg by remember { mutableStateOf<Dlg?>(null) }
     var pending by remember { mutableStateOf<Pending?>(null) }
     var recents by remember { mutableStateOf(Recents.list(ctx)) }
+    var askAllFiles by remember { mutableStateOf<List<Video>?>(null) }
+    var pendingLock by remember { mutableStateOf<List<Video>?>(null) }
+    var resumeTick by remember { mutableIntStateOf(0) }
 
     DisposableEffect(Unit) {
-        val o = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) recents = Recents.list(ctx) }
+        val o = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) { recents = Recents.list(ctx); resumeTick++ } }
         activity.lifecycle.addObserver(o)
         onDispose { activity.lifecycle.removeObserver(o) }
     }
@@ -179,14 +182,37 @@ fun Root() {
     }
 
     fun doLock(list: List<Video>) {
+        if (list.isEmpty()) return
         if (!Vault.hasPin(ctx)) { toast(R.string.t_create_pin); tab = 3; return }
+        if (AllFiles.supported() && !AllFiles.granted(ctx) && !Prefs.bool(ctx, "af_skip", false)) { askAllFiles = list; return }
         scope.launch {
             busy = ctx.getString(R.string.busy_private)
             val added = withContext(Dispatchers.IO) { list.mapNotNull { v -> Vault.add(ctx, v)?.let { v to it } } }
-            busy = null
-            if (added.isEmpty()) { toast(R.string.t_copy_videos_failed); return@launch }
-            requestDelete(added.map { it.first.uri }) { added.forEach { Vault.remove(ctx, it.second) } }
+            if (added.isEmpty()) { busy = null; toast(R.string.t_copy_videos_failed); return@launch }
+            if (AllFiles.granted(ctx)) {
+                // silent: remove the originals directly, no Android confirmation popup
+                val failed = withContext(Dispatchers.IO) {
+                    added.filter { (v, item) -> !AllFiles.delete(ctx, v).also { ok -> if (!ok) Vault.remove(ctx, item) } }
+                }
+                busy = null
+                if (failed.isNotEmpty()) toast(R.string.t_orig_failed)
+                reload++; vaultKey++
+            } else {
+                busy = null
+                requestDelete(added.map { it.first.uri }) { added.forEach { Vault.remove(ctx, it.second) } }
+            }
         }
+    }
+
+    fun deleteVideos(list: List<Video>) {
+        if (AllFiles.granted(ctx) && list.all { it.path.isNotBlank() }) {
+            scope.launch { withContext(Dispatchers.IO) { list.forEach { AllFiles.delete(ctx, it) } }; reload++ }
+        } else requestDelete(list.map { it.uri })
+    }
+
+    LaunchedEffect(resumeTick) {
+        val l = pendingLock
+        if (l != null && AllFiles.granted(ctx)) { pendingLock = null; doLock(l) }
     }
 
     fun doRename(t: MenuTarget, name: String) {
@@ -388,7 +414,7 @@ fun Root() {
                 else if (d.t.isFolder) stringResource(R.string.delete_folder_msg, d.t.videos.size, d.t.title)
                 else stringResource(R.string.delete_video_msg, d.t.title),
                 stringResource(R.string.delete),
-                onOk = { dlg = null; exitSelect(); requestDelete(d.t.videos.map { it.uri }) }, onDismiss = { dlg = null })
+                onOk = { dlg = null; exitSelect(); deleteVideos(d.t.videos) }, onDismiss = { dlg = null })
             is Dlg.Dest -> {
                 val opts = remember(d) { destinations(videos, d.videos.first().relPath) }
                 ChoiceDialog(stringResource(if (d.copy) R.string.copy_to else R.string.move_to), opts, -1, onPick = { i ->
@@ -406,6 +432,25 @@ fun Root() {
                 }, onDismiss = { dlg = null })
             }
             null -> {}
+        }
+
+        askAllFiles?.let { list ->
+            AlertDialog(
+                onDismissRequest = { askAllFiles = null },
+                title = { Text(stringResource(R.string.allfiles_title)) },
+                text = { Text(stringResource(R.string.allfiles_msg)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        pendingLock = list; askAllFiles = null
+                        ctx.startActivity(AllFiles.settingsIntent(ctx))
+                    }) { Text(stringResource(R.string.allfiles_open)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { Prefs.setBool(ctx, "af_skip", true); askAllFiles = null; doLock(list) }) {
+                        Text(stringResource(R.string.allfiles_skip))
+                    }
+                }
+            )
         }
 
         busy?.let { msg ->
@@ -553,7 +598,7 @@ fun SelectionBar(
 }
 
 @Composable
-private fun SelectOverlay(modifier: Modifier) {
+fun SelectOverlay(modifier: Modifier) {
     Box(
         modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
         contentAlignment = Alignment.Center
@@ -574,7 +619,7 @@ fun Thumb(uri: Uri, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun DurationBadge(ms: Long, modifier: Modifier) {
+fun DurationBadge(ms: Long, modifier: Modifier) {
     Text(
         fmtTime(ms), color = Color.White, fontSize = 11.sp,
         modifier = modifier.padding(5.dp).clip(RoundedCornerShape(6.dp))
@@ -684,7 +729,7 @@ fun VideoCollection(
 fun FoldersScreen(
     videos: List<Video>, grid: Boolean, open: String?, onOpen: (String?) -> Unit,
     onVideoLong: (Video) -> Unit, onFolderLong: (List<Video>) -> Unit,
-    header: (@Composable () -> Unit)? = null, sel: SelectionState = NoSelection
+    header: (@Composable () -> Unit)? = null, sel: SelectionState = NoSelection, folderSelectable: Boolean = true
 ) {
     val ctx = LocalContext.current
     BackHandler(open != null && !sel.active) { onOpen(null) }
@@ -721,8 +766,8 @@ fun FoldersScreen(
                 Column(
                     Modifier.clip(RoundedCornerShape(12.dp)).background(if (isSel) tint else Color.Transparent)
                         .combinedClickable(
-                            onClick = { if (sel.active) sel.toggle(e.key) else onOpen(e.key) },
-                            onLongClick = { if (sel.active) sel.toggle(e.key) else onFolderLong(e.value) }
+                            onClick = { if (sel.active && folderSelectable) sel.toggle(e.key) else onOpen(e.key) },
+                            onLongClick = { if (!sel.active) onFolderLong(e.value) else if (folderSelectable) sel.toggle(e.key) }
                         ).padding(4.dp)
                 ) {
                     Box {
@@ -742,8 +787,8 @@ fun FoldersScreen(
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (isSel) tint else Color.Transparent)
                         .combinedClickable(
-                            onClick = { if (sel.active) sel.toggle(e.key) else onOpen(e.key) },
-                            onLongClick = { if (sel.active) sel.toggle(e.key) else onFolderLong(e.value) }
+                            onClick = { if (sel.active && folderSelectable) sel.toggle(e.key) else onOpen(e.key) },
+                            onLongClick = { if (!sel.active) onFolderLong(e.value) else if (folderSelectable) sel.toggle(e.key) }
                         ).padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {

@@ -95,4 +95,7 @@
     <string name="select_all">Pilih semua</string>
     <string name="unselect_all">Batalkan semua</string>
     <string name="n_selected">%d dipilih</string>
+    <string name="allfiles_title">Akses semua file</string>
+    <string name="allfiles_open">Buka pengaturan</string>
+    <string name="allfiles_skip">Nanti saja</string>
 </resources>

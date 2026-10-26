@@ -95,4 +95,7 @@
     <string name="select_all">সব নির্বাচন</string>
     <string name="unselect_all">সব নির্বাচন বাতিল</string>
     <string name="n_selected">%d টি নির্বাচিত</string>
+    <string name="allfiles_title">সব ফাইলে অ্যাক্সেস</string>
+    <string name="allfiles_open">সেটিংস খুলুন</string>
+    <string name="allfiles_skip">এখন নয়</string>
 </resources>

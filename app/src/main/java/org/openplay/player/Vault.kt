@@ -2,6 +2,7 @@ package org.openplay.player
 
 import android.content.ContentValues
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -13,7 +14,7 @@ import java.util.UUID
 
 data class VaultItem(
     val id: String, val name: String, val ext: String, val origPath: String,
-    val size: Long, val durationMs: Long, val mime: String, val addedAt: Long
+    val size: Long, val durationMs: Long, val mime: String, val addedAt: Long, val origAbs: String = ""
 )
 
 /** Private folder: files live in app-private storage under random IDs; names/paths are kept in an index. */
@@ -36,7 +37,7 @@ object Vault {
         val arr = JSONArray(index(c).takeIf { it.exists() }?.readText() ?: "[]")
         (0 until arr.length()).map { arr.getJSONObject(it) }.map {
             VaultItem(it.getString("id"), it.getString("name"), it.getString("ext"), it.optString("orig"),
-                it.optLong("size"), it.optLong("dur"), it.optString("mime", "video/*"), it.optLong("added"))
+                it.optLong("size"), it.optLong("dur"), it.optString("mime", "video/*"), it.optLong("added"), it.optString("abs"))
         }.sortedBy { it.name.lowercase() }
     } catch (e: Exception) { emptyList() }
 
@@ -44,14 +45,14 @@ object Vault {
         val arr = JSONArray()
         items.forEach {
             arr.put(JSONObject().put("id", it.id).put("name", it.name).put("ext", it.ext).put("orig", it.origPath)
-                .put("size", it.size).put("dur", it.durationMs).put("mime", it.mime).put("added", it.addedAt))
+                .put("size", it.size).put("dur", it.durationMs).put("mime", it.mime).put("added", it.addedAt).put("abs", it.origAbs))
         }
         index(c).writeText(arr.toString())
     }
 
     fun add(c: Context, v: Video): VaultItem? {
         val ext = v.title.substringAfterLast('.', "mp4").filter { it.isLetterOrDigit() }.take(5).ifEmpty { "mp4" }.lowercase()
-        val item = VaultItem(UUID.randomUUID().toString(), v.title, ext, v.relPath, v.size, v.durationMs, v.mime, System.currentTimeMillis())
+        val item = VaultItem(UUID.randomUUID().toString(), v.title, ext, v.relPath, v.size, v.durationMs, v.mime, System.currentTimeMillis(), File(v.path).parent ?: "")
         val ok = try {
             c.contentResolver.openInputStream(v.uri)?.use { i -> file(c, item).outputStream().use { o -> i.copyTo(o) } } != null
         } catch (e: Exception) { false }
@@ -78,9 +79,36 @@ object Vault {
     }
 
     /** Puts the video back in its original folder, or in Movies/Restored/ if that folder no longer exists. */
+    private fun uniqueFile(dir: File, name: String): File {
+        var f = File(dir, name)
+        if (!f.exists()) return f
+        val base = name.substringBeforeLast('.', name)
+        val ext = if (name.contains('.')) "." + name.substringAfterLast('.') else ""
+        var n = 1
+        while (f.exists()) { f = File(dir, "$base ($n)$ext"); n++ }
+        return f
+    }
+
+    /** With "All files access": write straight back into the original folder (Movies/Restored only if it is gone). */
+    private fun restoreDirect(c: Context, item: VaultItem, f: File): Boolean {
+        return try {
+            val root = Environment.getExternalStorageDirectory()
+            val orig = item.origAbs.takeIf { it.isNotBlank() }?.let { File(it) }
+                ?: item.origPath.takeIf { it.isNotBlank() }?.let { File(root, it) }
+            val dest = if (orig != null && orig.isDirectory) orig else File(root, "Movies/Restored")
+            dest.mkdirs()
+            val target = uniqueFile(dest, item.name)
+            f.inputStream().use { i -> target.outputStream().use { o -> i.copyTo(o) } }
+            MediaScannerConnection.scanFile(c, arrayOf(target.absolutePath), arrayOf(item.mime), null)
+            remove(c, item)
+            true
+        } catch (e: Exception) { false }
+    }
+
     fun restore(c: Context, item: VaultItem): Boolean {
         val f = file(c, item)
         if (!f.exists()) return false
+        if (AllFiles.granted(c) && restoreDirect(c, item, f)) return true
         val targets = listOfNotNull(item.origPath.takeIf { folderExists(c, it) }, "Movies/Restored/")
         for (rel in targets) {
             try {

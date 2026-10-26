@@ -95,4 +95,7 @@
     <string name="select_all">Alle auswählen</string>
     <string name="unselect_all">Alle abwählen</string>
     <string name="n_selected">%d ausgewählt</string>
+    <string name="allfiles_title">Zugriff auf alle Dateien</string>
+    <string name="allfiles_open">Einstellungen öffnen</string>
+    <string name="allfiles_skip">Nicht jetzt</string>
 </resources>

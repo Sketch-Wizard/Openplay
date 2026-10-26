@@ -95,4 +95,7 @@
     <string name="select_all">すべて選択</string>
     <string name="unselect_all">すべて選択解除</string>
     <string name="n_selected">%d 件選択中</string>
+    <string name="allfiles_title">すべてのファイルへのアクセス</string>
+    <string name="allfiles_open">設定を開く</string>
+    <string name="allfiles_skip">今はしない</string>
 </resources>

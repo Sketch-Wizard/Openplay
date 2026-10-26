@@ -10,7 +10,8 @@ import android.provider.MediaStore
 
 data class Video(
     val uri: Uri, val title: String, val durationMs: Long, val folder: String, val folderKey: String,
-    val relPath: String, val size: Long, val dateAdded: Long, val mime: String, val width: Int, val height: Int
+    val relPath: String, val size: Long, val dateAdded: Long, val mime: String, val width: Int, val height: Int,
+    val path: String = ""
 )
 
 enum class SortKey(val label: Int) {
@@ -39,19 +40,20 @@ fun queryVideos(c: Context): List<Video> {
     val proj = mutableListOf(
         MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME, MediaStore.Video.Media.DURATION,
         MediaStore.Video.Media.BUCKET_DISPLAY_NAME, MediaStore.Video.Media.SIZE, MediaStore.Video.Media.DATE_ADDED,
-        MediaStore.Video.Media.MIME_TYPE, MediaStore.Video.Media.WIDTH, MediaStore.Video.Media.HEIGHT
+        MediaStore.Video.Media.MIME_TYPE, MediaStore.Video.Media.WIDTH, MediaStore.Video.Media.HEIGHT,
+        MediaStore.Video.Media.DATA
     )
     val hasRel = Build.VERSION.SDK_INT >= 29
     if (hasRel) proj += MediaStore.Video.Media.RELATIVE_PATH
     c.contentResolver.query(m, proj.toTypedArray(), null, null, null)?.use { q ->
         while (q.moveToNext()) {
             val bucket = q.getString(3) ?: "Other"
-            val rel = if (hasRel) q.getString(9) ?: "" else ""
+            val rel = if (hasRel) q.getString(10) ?: "" else ""
             val display = rel.trimEnd('/').substringAfterLast('/').ifEmpty { bucket }
             out += Video(
                 ContentUris.withAppendedId(m, q.getLong(0)), q.getString(1) ?: "Unknown", q.getLong(2),
                 display, rel.ifEmpty { bucket }, rel, q.getLong(4), q.getLong(5),
-                q.getString(6) ?: "video/*", q.getInt(7), q.getInt(8)
+                q.getString(6) ?: "video/*", q.getInt(7), q.getInt(8), q.getString(9) ?: ""
             )
         }
     }

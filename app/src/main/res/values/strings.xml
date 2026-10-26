@@ -145,4 +145,9 @@
     <string name="select_all">Select all</string>
     <string name="unselect_all">Unselect all</string>
     <string name="n_selected">%d selected</string>
+    <string name="allfiles_title">All files access</string>
+    <string name="allfiles_open">Open settings</string>
+    <string name="allfiles_skip">Not now</string>
+    <string name="allfiles_msg">To move videos into the private folder silently and put them back in their original folders, OpenPlay needs \"All files access\". You grant it once on the next screen. Without it, Android asks for confirmation every time and some folders can\'t be restored exactly.</string>
+    <string name="t_orig_failed">Could not remove the original of some videos</string>
 </resources>

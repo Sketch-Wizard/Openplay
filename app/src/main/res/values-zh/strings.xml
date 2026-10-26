@@ -95,4 +95,7 @@
     <string name="select_all">全选</string>
     <string name="unselect_all">取消全选</string>
     <string name="n_selected">已选择 %d 项</string>
+    <string name="allfiles_title">所有文件访问权限</string>
+    <string name="allfiles_open">打开设置</string>
+    <string name="allfiles_skip">暂不</string>
 </resources>

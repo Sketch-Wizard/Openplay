@@ -56,6 +56,7 @@ val folderMenu: List<MenuEntry> = listOf(
 )
 
 val vaultMenu: List<MenuEntry> = listOf(
+    Triple(Act.Select, Icons.Rounded.CheckBox, R.string.select),
     Triple(Act.Play, Icons.Rounded.PlayArrow, R.string.play),
     Triple(Act.Restore, Icons.Rounded.LockOpen, R.string.remove_private),
     Triple(Act.Details, Icons.Rounded.Info, R.string.details),
