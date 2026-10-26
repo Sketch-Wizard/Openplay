@@ -91,4 +91,8 @@
     <string name="select_videos">Pilih video</string>
     <string name="opt_loop">Ulangi</string>
     <string name="opt_options">Opsi</string>
+    <string name="select">Pilih</string>
+    <string name="select_all">Pilih semua</string>
+    <string name="unselect_all">Batalkan semua</string>
+    <string name="n_selected">%d dipilih</string>
 </resources>

@@ -91,4 +91,8 @@
     <string name="select_videos">اختر الفيديوهات</string>
     <string name="opt_loop">تكرار</string>
     <string name="opt_options">الخيارات</string>
+    <string name="select">تحديد</string>
+    <string name="select_all">تحديد الكل</string>
+    <string name="unselect_all">إلغاء تحديد الكل</string>
+    <string name="n_selected">%d محدد</string>
 </resources>

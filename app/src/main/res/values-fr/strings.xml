@@ -91,4 +91,8 @@
     <string name="select_videos">Sélectionner des vidéos</string>
     <string name="opt_loop">Boucle</string>
     <string name="opt_options">Options</string>
+    <string name="select">Sélectionner</string>
+    <string name="select_all">Tout sélectionner</string>
+    <string name="unselect_all">Tout désélectionner</string>
+    <string name="n_selected">%d sélectionnés</string>
 </resources>

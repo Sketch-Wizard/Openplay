@@ -91,4 +91,8 @@
     <string name="select_videos">选择视频</string>
     <string name="opt_loop">循环</string>
     <string name="opt_options">选项</string>
+    <string name="select">选择</string>
+    <string name="select_all">全选</string>
+    <string name="unselect_all">取消全选</string>
+    <string name="n_selected">已选择 %d 项</string>
 </resources>

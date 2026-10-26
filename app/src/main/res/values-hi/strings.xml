@@ -91,4 +91,8 @@
     <string name="select_videos">वीडियो चुनें</string>
     <string name="opt_loop">दोहराएँ</string>
     <string name="opt_options">विकल्प</string>
+    <string name="select">चुनें</string>
+    <string name="select_all">सभी चुनें</string>
+    <string name="unselect_all">सभी का चयन हटाएँ</string>
+    <string name="n_selected">%d चुने गए</string>
 </resources>

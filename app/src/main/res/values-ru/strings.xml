@@ -91,4 +91,8 @@
     <string name="select_videos">Выберите видео</string>
     <string name="opt_loop">Повтор</string>
     <string name="opt_options">Параметры</string>
+    <string name="select">Выбрать</string>
+    <string name="select_all">Выбрать все</string>
+    <string name="unselect_all">Снять выделение</string>
+    <string name="n_selected">Выбрано: %d</string>
 </resources>

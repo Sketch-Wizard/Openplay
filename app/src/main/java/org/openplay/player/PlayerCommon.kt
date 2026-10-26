@@ -15,13 +15,14 @@ import androidx.core.view.WindowInsetsControllerCompat
 data class PlItem(val uri: Uri, val title: String)
 
 /** Opens the player with a playlist. */
-fun Context.openPlayer(items: List<PlItem>, index: Int) {
+fun Context.openPlayer(items: List<PlItem>, index: Int, source: String = "all") {
     if (items.isEmpty()) return
     startActivity(
         Intent(this, PlayerActivity::class.java).setData(items[index].uri)
             .putStringArrayListExtra("pl_uris", ArrayList(items.map { it.uri.toString() }))
             .putStringArrayListExtra("pl_titles", ArrayList(items.map { it.title }))
             .putExtra("pl_index", index)
+            .putExtra("pl_src", source)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     )
 }

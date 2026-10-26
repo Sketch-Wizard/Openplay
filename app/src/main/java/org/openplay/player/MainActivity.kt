@@ -119,6 +119,8 @@ fun Root() {
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var openFolder by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectMode by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<String>() }
     var reload by remember { mutableIntStateOf(0) }
     var vaultKey by remember { mutableIntStateOf(0) }
     var busy by remember { mutableStateOf<String?>(null) }
@@ -140,8 +142,9 @@ fun Root() {
 
     LaunchedEffect(Unit) { if (!granted) permLauncher.launch(perm) }
     LaunchedEffect(granted, reload) { if (granted) videos = withContext(Dispatchers.IO) { queryVideos(ctx) } }
-    LaunchedEffect(tab) { if (tab >= 2) { searchOpen = false; query = "" } }
+    LaunchedEffect(tab) { selectMode = false; selected.clear(); if (tab >= 2) { searchOpen = false; query = "" } }
     BackHandler(searchOpen && !showSettings) { searchOpen = false; query = "" }
+    BackHandler(selectMode && !showSettings) { selectMode = false; selected.clear() }
 
     val q = query.trim()
     val sorted = remember(videos, sortKey, asc) { videos.sortVideos(sortKey, asc) }
@@ -215,6 +218,14 @@ fun Root() {
 
     fun detailRows(t: MenuTarget): List<Pair<String, String>> {
         val g = { id: Int -> ctx.getString(id) }
+        if (t.multi) {
+            val rows = mutableListOf(g(R.string.sort_name) to t.title)
+            if (t.isFolder) rows += g(R.string.nav_folders) to "${t.videos.map { it.folderKey }.distinct().size}"
+            rows += g(R.string.d_videos) to "${t.videos.size}"
+            rows += g(R.string.d_total_size) to fmtSize(t.videos.sumOf { it.size })
+            rows += g(R.string.sort_duration) to fmtTime(t.videos.sumOf { it.durationMs })
+            return rows
+        }
         if (t.isFolder) return listOf(
             g(R.string.sort_name) to t.title, g(R.string.d_location) to t.videos.first().relPath.ifEmpty { t.title },
             g(R.string.d_videos) to "${t.videos.size}", g(R.string.d_total_size) to fmtSize(t.videos.sumOf { it.size })
@@ -229,8 +240,16 @@ fun Root() {
         )
     }
 
+    fun playRecent(r: Recent) {
+        val key = if (r.source.startsWith("folder:")) r.source.removePrefix("folder:") else null
+        val list = if (key != null) sorted.filter { it.folderKey == key } else sorted
+        val idx = list.indexOfFirst { it.uri == r.uri }
+        if (idx >= 0) ctx.openPlayer(list.map { PlItem(it.uri, it.title) }, idx, r.source)
+        else ctx.openPlayer(listOf(PlItem(r.uri, r.title)), 0, r.source)
+    }
+
     val recentsHeader: @Composable () -> Unit = {
-        RecentsRow(recentsShown) { r -> ctx.openPlayer(listOf(PlItem(r.uri, r.title)), 0) }
+        RecentsRow(recentsShown) { r -> playRecent(r) }
     }
 
     val folderHitsHeader: @Composable () -> Unit = {
@@ -259,13 +278,50 @@ fun Root() {
     val onVideoLong: (Video) -> Unit = { v -> dlg = Dlg.Menu(MenuTarget(v.title, listOf(v), false)) }
     val onFolderLong: (List<Video>) -> Unit = { l -> dlg = Dlg.Menu(MenuTarget(l.first().folder, l, true)) }
 
+    val selectingFolders = tab == 0 && openFolder == null && q.isEmpty()
+    val currentKeys = remember(sorted, shown, tab, openFolder, q) {
+        when {
+            selectingFolders -> sorted.map { it.folderKey }.distinct()
+            tab == 0 && q.isEmpty() -> sorted.filter { it.folderKey == openFolder }.map { it.uri.toString() }
+            else -> shown.map { it.uri.toString() }
+        }
+    }
+    val allSelected = currentKeys.isNotEmpty() && selected.containsAll(currentKeys)
+    fun exitSelect() { selectMode = false; selected.clear() }
+    fun selectedVideos(): List<Video> =
+        if (selectingFolders) videos.filter { selected.contains(it.folderKey) }
+        else videos.filter { selected.contains(it.uri.toString()) }
+    fun selectionTarget(): MenuTarget {
+        val vids = selectedVideos()
+        val title = if (selectingFolders) ctx.getString(R.string.folders_count, selected.size)
+        else ctx.getString(R.string.videos_count, vids.size)
+        return MenuTarget(title, vids, selectingFolders, multi = true)
+    }
+    fun onSelectAction(act: Act) {
+        when (act) {
+            Act.Details -> dlg = Dlg.Details(selectionTarget())
+            Act.Move -> dlg = Dlg.Dest(selectedVideos(), false)
+            Act.Copy -> dlg = Dlg.Dest(selectedVideos(), true)
+            Act.Private -> { val v = selectedVideos(); exitSelect(); if (v.isNotEmpty()) doLock(v) }
+            Act.Delete -> dlg = Dlg.Delete(selectionTarget())
+            Act.Share -> selectedVideos().firstOrNull()?.let { MediaOps.share(ctx, it) }
+            else -> {}
+        }
+    }
+    val sel = SelectionState(selectMode, selected.toSet()) { k -> if (!selected.remove(k)) selected.add(k) }
+
     if (showSettings) { SettingsScreen { showSettings = false }; return }
 
     Box(Modifier.fillMaxSize()) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                Header(searchOpen, query, { query = it },
+                if (selectMode) SelectionBar(
+                    selected.size, allSelected, selectingFolders, selected.size == 1,
+                    onClose = { exitSelect() },
+                    onAll = { if (allSelected) selected.removeAll(currentKeys) else currentKeys.forEach { if (!selected.contains(it)) selected.add(it) } },
+                    onAction = { onSelectAction(it) })
+                else Header(searchOpen, query, { query = it },
                     onSearch = { searchOpen = !searchOpen; if (!searchOpen) query = "" },
                     onMenu = { showSettings = true }, searchEnabled = tab < 2)
             },
@@ -275,7 +331,7 @@ fun Root() {
                 if (tab < 2 && granted) {
                     val count = if (tab == 1 || q.isNotEmpty()) stringResource(R.string.videos_count, shown.size)
                     else stringResource(R.string.folders_count, folderCount)
-                    Toolbar(count, sortKey, asc, grid,
+                    Toolbar(count, sortKey, asc, grid, selectMode, { selectMode = !selectMode; if (!selectMode) selected.clear() },
                         onSort = { sortKey = it; prefs.edit().putInt("sort", it.ordinal).apply() },
                         onOrder = { asc = !asc; prefs.edit().putBoolean("asc", asc).apply() },
                         onGrid = { grid = !grid; prefs.edit().putBoolean("grid", grid).apply() })
@@ -288,12 +344,12 @@ fun Root() {
                             Button(onClick = { permLauncher.launch(perm) }) { Text(stringResource(R.string.grant_access)) }
                         }
                         tab < 2 && q.isNotEmpty() -> VideoCollection(shown, grid, onVideoLong,
-                            header = if (folderHits.isNotEmpty()) folderHitsHeader else null
+                            header = if (folderHits.isNotEmpty()) folderHitsHeader else null, sel = sel
                         ) { i -> ctx.openPlayer(shown.map { PlItem(it.uri, it.title) }, i) }
                         tab == 0 -> FoldersScreen(sorted, grid, openFolder, { openFolder = it }, onVideoLong, onFolderLong,
-                            header = if (recentsShown.isNotEmpty()) recentsHeader else null)
+                            header = if (recentsShown.isNotEmpty()) recentsHeader else null, sel = sel)
                         tab == 1 -> VideoCollection(shown, grid, onVideoLong,
-                            header = if (recentsShown.isNotEmpty()) recentsHeader else null
+                            header = if (recentsShown.isNotEmpty()) recentsHeader else null, sel = sel
                         ) { i -> ctx.openPlayer(shown.map { PlItem(it.uri, it.title) }, i) }
                         tab == 2 -> StreamScreen()
                         else -> PrivateScreen(vaultKey, videos, onAdd = { doLock(it) }, onChanged = { reload++ }, setBusy = { busy = it })
@@ -306,6 +362,11 @@ fun Root() {
             is Dlg.Menu -> ActionSheet(d.t.title, if (d.t.isFolder) folderMenu else videoMenu, onPick = { a ->
                 dlg = when (a) {
                     Act.Rename -> Dlg.Rename(d.t)
+                    Act.Select -> {
+                        selectMode = true; selected.clear()
+                        selected.add(if (d.t.isFolder) d.t.videos.first().folderKey else d.t.videos.first().uri.toString())
+                        null
+                    }
                     Act.Details -> Dlg.Details(d.t)
                     Act.Delete -> Dlg.Delete(d.t)
                     Act.Move -> Dlg.Dest(d.t.videos, false)
@@ -320,15 +381,18 @@ fun Root() {
                 onOk = { n -> dlg = null; doRename(d.t, n) }, onDismiss = { dlg = null })
             is Dlg.Details -> DetailsDialog(detailRows(d.t)) { dlg = null }
             is Dlg.Delete -> ConfirmDialog(
-                stringResource(if (d.t.isFolder) R.string.delete_folder_q else R.string.delete_video_q),
-                if (d.t.isFolder) stringResource(R.string.delete_folder_msg, d.t.videos.size, d.t.title)
+                stringResource(
+                    when { d.t.multi -> R.string.delete; d.t.isFolder -> R.string.delete_folder_q; else -> R.string.delete_video_q }
+                ),
+                if (d.t.multi) stringResource(R.string.delete_video_msg, d.t.title)
+                else if (d.t.isFolder) stringResource(R.string.delete_folder_msg, d.t.videos.size, d.t.title)
                 else stringResource(R.string.delete_video_msg, d.t.title),
                 stringResource(R.string.delete),
-                onOk = { dlg = null; requestDelete(d.t.videos.map { it.uri }) }, onDismiss = { dlg = null })
+                onOk = { dlg = null; exitSelect(); requestDelete(d.t.videos.map { it.uri }) }, onDismiss = { dlg = null })
             is Dlg.Dest -> {
                 val opts = remember(d) { destinations(videos, d.videos.first().relPath) }
                 ChoiceDialog(stringResource(if (d.copy) R.string.copy_to else R.string.move_to), opts, -1, onPick = { i ->
-                    val dest = opts[i]; dlg = null
+                    val dest = opts[i]; dlg = null; exitSelect()
                     if (d.copy) scope.launch {
                         busy = ctx.getString(R.string.busy_copying)
                         val ok = withContext(Dispatchers.IO) { d.videos.all { MediaOps.copy(ctx, it, dest) } }
@@ -414,13 +478,17 @@ fun NavBar(selected: Int, onSelect: (Int) -> Unit) {
 
 @Composable
 fun Toolbar(
-    count: String, key: SortKey, asc: Boolean, grid: Boolean,
+    count: String, key: SortKey, asc: Boolean, grid: Boolean, selectActive: Boolean, onSelect: () -> Unit,
     onSort: (SortKey) -> Unit, onOrder: () -> Unit, onGrid: () -> Unit
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(count, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+        IconButton(onClick = onSelect) {
+            Icon(Icons.Rounded.CheckBox, stringResource(R.string.select),
+                tint = if (selectActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+        }
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.Sort, stringResource(R.string.sort)) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -439,6 +507,58 @@ fun Toolbar(
             }
         }
         IconButton(onClick = onGrid) { Icon(if (grid) Icons.Rounded.ViewList else Icons.Rounded.GridView, stringResource(R.string.view_style)) }
+    }
+}
+
+/** Selection mode state shared by the lists. keys = video uri strings (or folder keys on the Folders tab). */
+class SelectionState(val active: Boolean, val keys: Set<String>, val toggle: (String) -> Unit)
+val NoSelection = SelectionState(false, emptySet()) {}
+
+@Composable
+fun SelectionBar(
+    count: Int, allSelected: Boolean, folders: Boolean, single: Boolean,
+    onClose: () -> Unit, onAll: () -> Unit, onAction: (Act) -> Unit
+) {
+    var menu by remember { mutableStateOf(false) }
+    val source = if (folders) folderMenu else videoMenu
+    val acts = if (folders) listOf(Act.Details, Act.Private, Act.Delete)
+    else listOfNotNull(Act.Details, Act.Move, Act.Copy, Act.Private, Act.Delete, if (single) Act.Share else null)
+    val entries = acts.mapNotNull { a -> source.firstOrNull { it.first == a } }
+    Row(
+        Modifier.fillMaxWidth()
+            .background(Brush.horizontalGradient(listOf(Color(0xFFFF9800), Color(0xFFE8590C))))
+            .statusBarsPadding().height(52.dp).padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, null, tint = Color.White) }
+        Text(stringResource(R.string.n_selected, count), color = Color.White, fontWeight = FontWeight.Bold,
+            fontSize = 18.sp, modifier = Modifier.weight(1f))
+        IconButton(onClick = onAll) {
+            Icon(if (allSelected) Icons.Rounded.Deselect else Icons.Rounded.SelectAll,
+                stringResource(if (allSelected) R.string.unselect_all else R.string.select_all), tint = Color.White)
+        }
+        Box {
+            IconButton(onClick = { menu = true }, enabled = count > 0) { Icon(Icons.Rounded.MoreVert, null, tint = Color.White) }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                entries.forEach { (act, icon, label) ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(label)) },
+                        leadingIcon = { Icon(icon, null) },
+                        onClick = { menu = false; onAction(act) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelectOverlay(modifier: Modifier) {
+    Box(
+        modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(Icons.Rounded.CheckCircle, null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(34.dp))
     }
 }
 
@@ -495,12 +615,13 @@ fun RecentsRow(recents: List<Recent>, onOpen: (Recent) -> Unit) {
 @Composable
 fun VideoCollection(
     videos: List<Video>, grid: Boolean, onLong: (Video) -> Unit,
-    header: (@Composable () -> Unit)? = null, onOpen: (Int) -> Unit
+    header: (@Composable () -> Unit)? = null, sel: SelectionState = NoSelection, onOpen: (Int) -> Unit
 ) {
     if (videos.isEmpty()) {
         Column { header?.invoke(); Text(stringResource(R.string.no_videos), Modifier.padding(24.dp)) }
         return
     }
+    val tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
     if (grid) {
         LazyVerticalGrid(
             GridCells.Adaptive(160.dp), contentPadding = PaddingValues(12.dp),
@@ -508,10 +629,19 @@ fun VideoCollection(
         ) {
             if (header != null) item(span = { GridItemSpan(maxLineSpan) }) { header() }
             itemsIndexed(videos, key = { _, v -> v.uri.toString() }) { i, v ->
-                Column(Modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = { onOpen(i) }, onLongClick = { onLong(v) })) {
+                val key = v.uri.toString()
+                val isSel = sel.keys.contains(key)
+                Column(
+                    Modifier.clip(RoundedCornerShape(12.dp)).background(if (isSel) tint else Color.Transparent)
+                        .combinedClickable(
+                            onClick = { if (sel.active) sel.toggle(key) else onOpen(i) },
+                            onLongClick = { if (sel.active) sel.toggle(key) else onLong(v) }
+                        ).padding(4.dp)
+                ) {
                     Box {
                         Thumb(v.uri, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                         DurationBadge(v.durationMs, Modifier.align(Alignment.BottomEnd))
+                        if (isSel) SelectOverlay(Modifier.matchParentSize())
                     }
                     Text(v.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 6.dp))
                     Text(fmtSize(v.size), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
@@ -522,14 +652,20 @@ fun VideoCollection(
         LazyColumn(contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
             if (header != null) item { header() }
             itemsIndexed(videos, key = { _, v -> v.uri.toString() }) { i, v ->
+                val key = v.uri.toString()
+                val isSel = sel.keys.contains(key)
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                        .combinedClickable(onClick = { onOpen(i) }, onLongClick = { onLong(v) }).padding(8.dp),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (isSel) tint else Color.Transparent)
+                        .combinedClickable(
+                            onClick = { if (sel.active) sel.toggle(key) else onOpen(i) },
+                            onLongClick = { if (sel.active) sel.toggle(key) else onLong(v) }
+                        ).padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box {
                         Thumb(v.uri, Modifier.width(128.dp).aspectRatio(16f / 9f))
                         DurationBadge(v.durationMs, Modifier.align(Alignment.BottomEnd))
+                        if (isSel) SelectOverlay(Modifier.matchParentSize())
                     }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
@@ -548,11 +684,12 @@ fun VideoCollection(
 fun FoldersScreen(
     videos: List<Video>, grid: Boolean, open: String?, onOpen: (String?) -> Unit,
     onVideoLong: (Video) -> Unit, onFolderLong: (List<Video>) -> Unit,
-    header: (@Composable () -> Unit)? = null
+    header: (@Composable () -> Unit)? = null, sel: SelectionState = NoSelection
 ) {
     val ctx = LocalContext.current
-    BackHandler(open != null) { onOpen(null) }
+    BackHandler(open != null && !sel.active) { onOpen(null) }
     val groups = remember(videos) { videos.groupBy { it.folderKey }.toSortedMap(String.CASE_INSENSITIVE_ORDER) }
+    val tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
     val current = open
     if (current != null) {
         val list = groups[current].orEmpty()
@@ -562,7 +699,9 @@ fun FoldersScreen(
                 Spacer(Modifier.width(8.dp))
                 Text(list.firstOrNull()?.folder ?: current, fontWeight = FontWeight.Bold)
             }
-            VideoCollection(list, grid, onVideoLong) { i -> ctx.openPlayer(list.map { PlItem(it.uri, it.title) }, i) }
+            VideoCollection(list, grid, onVideoLong, sel = sel) { i ->
+                ctx.openPlayer(list.map { PlItem(it.uri, it.title) }, i, "folder:$current")
+            }
         }
         return
     }
@@ -578,8 +717,18 @@ fun FoldersScreen(
         ) {
             if (header != null) item(span = { GridItemSpan(maxLineSpan) }) { header() }
             items(folders, key = { it.key }) { e ->
-                Column(Modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(onClick = { onOpen(e.key) }, onLongClick = { onFolderLong(e.value) })) {
-                    Thumb(e.value.first().uri, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                val isSel = sel.keys.contains(e.key)
+                Column(
+                    Modifier.clip(RoundedCornerShape(12.dp)).background(if (isSel) tint else Color.Transparent)
+                        .combinedClickable(
+                            onClick = { if (sel.active) sel.toggle(e.key) else onOpen(e.key) },
+                            onLongClick = { if (sel.active) sel.toggle(e.key) else onFolderLong(e.value) }
+                        ).padding(4.dp)
+                ) {
+                    Box {
+                        Thumb(e.value.first().uri, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                        if (isSel) SelectOverlay(Modifier.matchParentSize())
+                    }
                     Text(e.value.first().folder, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 6.dp))
                     Text(stringResource(R.string.videos_count, e.value.size), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 }
@@ -589,12 +738,19 @@ fun FoldersScreen(
         LazyColumn(contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
             if (header != null) item { header() }
             items(folders, key = { it.key }) { e ->
+                val isSel = sel.keys.contains(e.key)
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                        .combinedClickable(onClick = { onOpen(e.key) }, onLongClick = { onFolderLong(e.value) }).padding(8.dp),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (isSel) tint else Color.Transparent)
+                        .combinedClickable(
+                            onClick = { if (sel.active) sel.toggle(e.key) else onOpen(e.key) },
+                            onLongClick = { if (sel.active) sel.toggle(e.key) else onFolderLong(e.value) }
+                        ).padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Thumb(e.value.first().uri, Modifier.width(110.dp).aspectRatio(16f / 9f))
+                    Box {
+                        Thumb(e.value.first().uri, Modifier.width(110.dp).aspectRatio(16f / 9f))
+                        if (isSel) SelectOverlay(Modifier.matchParentSize())
+                    }
                     Spacer(Modifier.width(14.dp))
                     Column {
                         Text(e.value.first().folder, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)

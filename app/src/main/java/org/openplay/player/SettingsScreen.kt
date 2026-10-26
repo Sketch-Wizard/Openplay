@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private const val REPO = "https://github.com/Sketch-Wizard/Openplay"
-private const val VERSION = "0.7.0"
+private const val VERSION = "0.8.0"
 private val speedValues = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
 @Composable

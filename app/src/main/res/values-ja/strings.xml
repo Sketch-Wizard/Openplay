@@ -91,4 +91,8 @@
     <string name="select_videos">動画を選択</string>
     <string name="opt_loop">リピート</string>
     <string name="opt_options">オプション</string>
+    <string name="select">選択</string>
+    <string name="select_all">すべて選択</string>
+    <string name="unselect_all">すべて選択解除</string>
+    <string name="n_selected">%d 件選択中</string>
 </resources>

@@ -27,21 +27,30 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.media3.common.*
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import java.util.Locale
 
+/**
+ * Background play OFF: the video plays in a plain in-app player, so no notification is ever shown.
+ * Background play ON: playback runs in PlaybackService (media notification, keeps playing when you leave).
+ */
 class PlayerActivity : ComponentActivity() {
     private val ui = PlayerUiState()
-    private var controller by mutableStateOf<MediaController?>(null)
+    private var controller by mutableStateOf<Player?>(null)
+    private var localPlayer: ExoPlayer? = null
+    private var mediaController: MediaController? = null
+    private var engineGen = 0
     private val resizeModes = intArrayOf(
         AspectRatioFrameLayout.RESIZE_MODE_FIT, AspectRatioFrameLayout.RESIZE_MODE_FILL,
         AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     )
     private var items: List<PlItem> = emptyList()
     private var startIndex = 0
+    private var source = "all"
     private var audioGroups: List<Tracks.Group> = emptyList()
     private var textGroups: List<Tracks.Group> = emptyList()
     private val handler = Handler(Looper.getMainLooper())
@@ -49,6 +58,21 @@ class PlayerActivity : ComponentActivity() {
     private lateinit var sys: SystemControls
     private lateinit var actions: PlayerActions
     private val pickSubtitle = registerForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(::addSubtitle) }
+
+    private val listener = object : Player.Listener {
+        override fun onPlayerError(error: PlaybackException) {
+            Toast.makeText(this@PlayerActivity, getString(R.string.unsupported), Toast.LENGTH_LONG).show()
+        }
+        override fun onTracksChanged(tracks: Tracks) = refreshTracks(tracks)
+        override fun onTrackSelectionParametersChanged(parameters: TrackSelectionParameters) {
+            controller?.let { refreshTracks(it.currentTracks) }
+        }
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+            if (ui.orientation == 0 && !ui.rotationLocked && videoSize.width > videoSize.height) {
+                applyOrientation(1, false)
+            }
+        }
+    }
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -72,6 +96,7 @@ class PlayerActivity : ComponentActivity() {
         val (list, idx) = intent.readPlaylist()
         if (list.isEmpty()) { finish(); return }
         items = list; startIndex = idx
+        source = intent.getStringExtra("pl_src") ?: "all"
         enterImmersive()
         sys = SystemControls(this)
         ui.speed = Prefs.float(this, "speed", 1f)
@@ -94,7 +119,11 @@ class PlayerActivity : ComponentActivity() {
             },
             onGetPosition = { controller?.currentPosition ?: 0L },
             onSpeed = { controller?.setPlaybackSpeed(it); ui.speed = it },
-            onBgToggle = { ui.bgPlay = !ui.bgPlay; ui.hud = getString(if (ui.bgPlay) R.string.hud_bg_on else R.string.hud_bg_off) },
+            onBgToggle = {
+                ui.bgPlay = !ui.bgPlay
+                ui.hud = getString(if (ui.bgPlay) R.string.hud_bg_on else R.string.hud_bg_off)
+                switchEngine(ui.bgPlay)
+            },
             onRotate = {
                 ui.rotationLocked = false
                 ui.orientation = (ui.orientation + 1) % 3
@@ -146,54 +175,78 @@ class PlayerActivity : ComponentActivity() {
                 }
             }
         }
-        connect()
+        val resume = if (Prefs.bool(this, "resume", true)) prefs.getLong(items[startIndex].uri.toString(), 0L) else 0L
+        startEngine(ui.bgPlay, startIndex, resume, true)
         handler.post(ticker)
     }
 
-    private fun connect() {
-        val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        val future = MediaController.Builder(this, token).buildAsync()
-        future.addListener({
-            val c = future.get()
-            c.addListener(object : Player.Listener {
-                override fun onPlayerError(error: PlaybackException) {
-                    Toast.makeText(this@PlayerActivity, getString(R.string.unsupported), Toast.LENGTH_LONG).show()
+    // ---------- playback engine ----------
+
+    private fun startEngine(bg: Boolean, index: Int, pos: Long, autoplay: Boolean) {
+        val gen = ++engineGen
+        if (bg) {
+            val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
+            val future = MediaController.Builder(this, token).buildAsync()
+            future.addListener({
+                if (gen != engineGen || isDestroyed) {
+                    try { MediaController.releaseFuture(future) } catch (e: Exception) { /* ignore */ }
+                    return@addListener
                 }
-                override fun onTracksChanged(tracks: Tracks) = refreshTracks(tracks)
-                override fun onTrackSelectionParametersChanged(parameters: TrackSelectionParameters) {
-                    refreshTracks(c.currentTracks)
-                }
-                override fun onVideoSizeChanged(videoSize: VideoSize) {
-                    if (ui.orientation == 0 && !ui.rotationLocked && videoSize.width > videoSize.height) {
-                        applyOrientation(1, false)
-                    }
-                }
-            })
-            controller = c
-            val resume = if (Prefs.bool(this, "resume", true)) prefs.getLong(items[startIndex].uri.toString(), 0L) else 0L
-            c.setMediaItems(items.map { MediaItem.fromUri(it.uri) }, startIndex, resume)
-            c.setPlaybackSpeed(ui.speed)
-            c.prepare(); c.play()
-        }, ContextCompat.getMainExecutor(this))
+                val c = future.get()
+                mediaController = c
+                prepare(c, index, pos, autoplay)
+            }, ContextCompat.getMainExecutor(this))
+        } else {
+            val p = ExoPlayer.Builder(this)
+                .setRenderersFactory(Decoders.factory(this))
+                .setAudioAttributes(
+                    AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true
+                )
+                .setHandleAudioBecomingNoisy(true)
+                .build()
+            localPlayer = p
+            prepare(p, index, pos, autoplay)
+        }
+    }
+
+    private fun prepare(p: Player, index: Int, pos: Long, autoplay: Boolean) {
+        p.addListener(listener)
+        controller = p
+        p.setMediaItems(items.map { MediaItem.fromUri(it.uri) }, index, pos)
+        p.setPlaybackSpeed(ui.speed)
+        p.repeatMode = if (ui.loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        p.prepare()
+        if (autoplay) p.play()
+    }
+
+    private fun releaseEngine() {
+        engineGen++
+        controller?.removeListener(listener)
+        controller = null
+        mediaController?.release(); mediaController = null
+        localPlayer?.release(); localPlayer = null
+    }
+
+    /** Hands the video over to the other engine (or rebuilds it after a decoder change) at the same position. */
+    private fun switchEngine(bg: Boolean, decoderChanged: Boolean = false) {
+        val c = controller ?: return
+        val idx = c.currentMediaItemIndex
+        val pos = c.currentPosition
+        val playing = c.playWhenReady
+        c.pause()
+        if (decoderChanged) Prefs.setInt(this, "decoder", ui.decoder)   // the service rebuilds its player on this change
+        if (mediaController != null && !bg) { mediaController?.stop(); mediaController?.clearMediaItems() }
+        releaseEngine()
+        startEngine(bg, idx, pos, playing)
     }
 
     private fun changeDecoder(mode: Int) {
-        val c = controller ?: return
         if (mode == ui.decoder) return
-        val idx = c.currentMediaItemIndex
-        val pos = c.currentPosition
         ui.decoder = mode
-        // the playback service builds a new player when this setting changes, then we reload the video
-        Prefs.setInt(this, "decoder", mode)
-        handler.postDelayed({
-            controller?.let { n ->
-                n.setMediaItems(items.map { MediaItem.fromUri(it.uri) }, idx, pos)
-                n.setPlaybackSpeed(ui.speed)
-                n.repeatMode = if (ui.loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-                n.prepare(); n.play()
-            }
-        }, 500)
+        switchEngine(ui.bgPlay, decoderChanged = true)
     }
+
+    // ---------- tracks / subtitles ----------
 
     private fun trackName(f: Format, i: Int): String =
         f.label ?: f.language?.let { l -> Locale(l).displayLanguage.ifBlank { l } } ?: "Track ${i + 1}"
@@ -246,6 +299,8 @@ class PlayerActivity : ComponentActivity() {
         c.seekTo(i, pos)
     }
 
+    // ---------- lifecycle ----------
+
     override fun onUserLeaveHint() {
         if (controller?.isPlaying == true) {
             enterPictureInPictureMode(PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9)).build())
@@ -262,14 +317,14 @@ class PlayerActivity : ComponentActivity() {
         val c = controller ?: return
         items.getOrNull(c.currentMediaItemIndex)?.let {
             prefs.edit().putLong(it.uri.toString(), c.currentPosition).apply()
-            Recents.record(this, it.uri, titleOf(it), c.currentPosition, c.duration.coerceAtLeast(0L))
+            Recents.record(this, it.uri, titleOf(it), c.currentPosition, c.duration.coerceAtLeast(0L), source)
         }
         if (!isInPictureInPictureMode && !ui.bgPlay) c.pause()
     }
 
     override fun onDestroy() {
         handler.removeCallbacks(ticker)
-        controller?.release()
+        releaseEngine()   // background mode keeps playing in the service; otherwise the player is simply released
         super.onDestroy()
     }
 }

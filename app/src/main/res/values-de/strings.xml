@@ -91,4 +91,8 @@
     <string name="select_videos">Videos auswählen</string>
     <string name="opt_loop">Wiederholen</string>
     <string name="opt_options">Optionen</string>
+    <string name="select">Auswählen</string>
+    <string name="select_all">Alle auswählen</string>
+    <string name="unselect_all">Alle abwählen</string>
+    <string name="n_selected">%d ausgewählt</string>
 </resources>

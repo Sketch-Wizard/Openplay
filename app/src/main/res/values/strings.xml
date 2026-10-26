@@ -115,7 +115,7 @@
     <string name="t_restored">Video restored to your library</string>
     <string name="t_restore_failed">Could not restore this video</string>
     <string name="settings_tip">Tip: in the player, open the options panel and tap \"Save as default\" to use the current settings for every video.</string>
-    <string name="bg_play_sub">Keep playing when you leave the app</string>
+    <string name="bg_play_sub">Keep playing when you leave the app (shows a notification)</string>
     <string name="resume_sub">Continue videos where you left off</string>
     <string name="dec_hw">HW – hardware only</string>
     <string name="dec_hwplus">HW+ – hardware first, software if needed</string>
@@ -141,4 +141,8 @@
     <string name="select_videos">Select videos</string>
     <string name="opt_loop">Loop</string>
     <string name="opt_options">Options</string>
+    <string name="select">Select</string>
+    <string name="select_all">Select all</string>
+    <string name="unselect_all">Unselect all</string>
+    <string name="n_selected">%d selected</string>
 </resources>

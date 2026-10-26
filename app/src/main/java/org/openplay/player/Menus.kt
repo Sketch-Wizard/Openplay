@@ -20,9 +20,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-enum class Act { Rename, Details, Share, Private, Move, Copy, Delete, Restore, Play }
+enum class Act { Rename, Details, Share, Private, Move, Copy, Delete, Restore, Play, Select }
 
-data class MenuTarget(val title: String, val videos: List<Video>, val isFolder: Boolean)
+data class MenuTarget(val title: String, val videos: List<Video>, val isFolder: Boolean, val multi: Boolean = false)
 
 sealed interface Dlg {
     data class Menu(val t: MenuTarget) : Dlg
@@ -37,6 +37,7 @@ class Pending(val then: (() -> Unit)?, val denied: (() -> Unit)?)
 typealias MenuEntry = Triple<Act, ImageVector, Int>
 
 val videoMenu: List<MenuEntry> = listOf(
+    Triple(Act.Select, Icons.Rounded.CheckBox, R.string.select),
     Triple(Act.Rename, Icons.Rounded.Edit, R.string.rename),
     Triple(Act.Details, Icons.Rounded.Info, R.string.details),
     Triple(Act.Share, Icons.Rounded.Share, R.string.share),
@@ -47,6 +48,7 @@ val videoMenu: List<MenuEntry> = listOf(
 )
 
 val folderMenu: List<MenuEntry> = listOf(
+    Triple(Act.Select, Icons.Rounded.CheckBox, R.string.select),
     Triple(Act.Rename, Icons.Rounded.Edit, R.string.rename_folder),
     Triple(Act.Details, Icons.Rounded.Info, R.string.details),
     Triple(Act.Private, Icons.Rounded.Lock, R.string.move_all_private),
