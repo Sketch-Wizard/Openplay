@@ -186,8 +186,12 @@ fun Root() {
         if (!Vault.hasPin(ctx)) { toast(R.string.t_create_pin); tab = 3; return }
         if (AllFiles.supported() && !AllFiles.granted(ctx) && !Prefs.bool(ctx, "af_skip", false)) { askAllFiles = list; return }
         scope.launch {
-            busy = ctx.getString(R.string.busy_private)
-            val added = withContext(Dispatchers.IO) { list.mapNotNull { v -> Vault.add(ctx, v)?.let { v to it } } }
+            val added = mutableListOf<Pair<Video, VaultItem>>()
+            list.forEachIndexed { i, v ->
+                busy = ctx.getString(R.string.busy_private) + " " + (i + 1) + "/" + list.size
+                val item = withContext(Dispatchers.IO) { Vault.add(ctx, v) }
+                if (item != null) added += v to item
+            }
             if (added.isEmpty()) { busy = null; toast(R.string.t_copy_videos_failed); return@launch }
             if (AllFiles.granted(ctx)) {
                 // silent: remove the originals directly, no Android confirmation popup
@@ -454,12 +458,15 @@ fun Root() {
         }
 
         busy?.let { msg ->
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).clickable(enabled = true) {}, contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = Color.White)
-                    Spacer(Modifier.height(12.dp))
-                    Text(msg, color = Color.White)
-                }
+            // small banner: the app stays usable while videos are being moved
+            Row(
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp).clip(RoundedCornerShape(50))
+                    .background(Color(0xFF2A221B)).padding(horizontal = 18.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(msg, color = Color.White, fontSize = 14.sp)
             }
         }
     }

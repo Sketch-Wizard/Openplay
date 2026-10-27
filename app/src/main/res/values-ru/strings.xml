@@ -98,4 +98,8 @@
     <string name="allfiles_title">Доступ ко всем файлам</string>
     <string name="allfiles_open">Открыть настройки</string>
     <string name="allfiles_skip">Не сейчас</string>
+    <string name="swipe_sens">Чувствительность перемотки свайпом</string>
+    <string name="sens_low">Низкая</string>
+    <string name="sens_med">Средняя</string>
+    <string name="sens_high">Высокая</string>
 </resources>

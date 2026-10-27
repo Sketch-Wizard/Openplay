@@ -28,6 +28,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.media3.common.*
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -68,7 +69,7 @@ class PlayerActivity : ComponentActivity() {
             controller?.let { refreshTracks(it.currentTracks) }
         }
         override fun onVideoSizeChanged(videoSize: VideoSize) {
-            if (ui.orientation == 0 && !ui.rotationLocked && videoSize.width > videoSize.height) {
+            if (ui.orientation == 0 && videoSize.width > videoSize.height) {
                 applyOrientation(1, false)
             }
         }
@@ -103,6 +104,7 @@ class PlayerActivity : ComponentActivity() {
         ui.orientation = Prefs.int(this, "orient", 0)
         ui.bgPlay = Prefs.bool(this, "bg", false)
         ui.decoder = Prefs.int(this, "decoder", 1)
+        ui.swipeGain = floatArrayOf(0.6f, 1f, 1.5f)[Prefs.int(this, "swipe", 1).coerceIn(0, 2)]
         ui.resizeIndex = Prefs.int(this, "resize", 0).coerceIn(0, 2)
         if (ui.orientation != 0) applyOrientation(ui.orientation, false)
 
@@ -125,16 +127,10 @@ class PlayerActivity : ComponentActivity() {
                 switchEngine(ui.bgPlay)
             },
             onRotate = {
-                ui.rotationLocked = false
                 ui.orientation = (ui.orientation + 1) % 3
                 applyOrientation(ui.orientation, false)
                 val names = listOf(R.string.orient_auto, R.string.orient_landscape, R.string.orient_portrait).map { getString(it) }
-                ui.hud = getString(R.string.hud_orient, names[ui.orientation])
-            },
-            onLockToggle = {
-                ui.rotationLocked = !ui.rotationLocked
-                applyOrientation(ui.orientation, ui.rotationLocked)
-                ui.hud = getString(if (ui.rotationLocked) R.string.hud_locked else R.string.hud_unlocked)
+                ui.hud = names[ui.orientation] + (if (ui.orientation != 0) " · " + getString(R.string.hud_locked) else "")
             },
             onLoop = {
                 ui.loop = !ui.loop
@@ -203,6 +199,7 @@ class PlayerActivity : ComponentActivity() {
                     AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true
                 )
                 .setHandleAudioBecomingNoisy(true)
+                .setSeekParameters(SeekParameters.CLOSEST_SYNC)   // snap to the nearest keyframe: seeks play instantly
                 .build()
             localPlayer = p
             prepare(p, index, pos, autoplay)

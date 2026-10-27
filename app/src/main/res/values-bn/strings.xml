@@ -98,4 +98,8 @@
     <string name="allfiles_title">সব ফাইলে অ্যাক্সেস</string>
     <string name="allfiles_open">সেটিংস খুলুন</string>
     <string name="allfiles_skip">এখন নয়</string>
+    <string name="swipe_sens">সোয়াইপ সিক সংবেদনশীলতা</string>
+    <string name="sens_low">কম</string>
+    <string name="sens_med">মাঝারি</string>
+    <string name="sens_high">বেশি</string>
 </resources>

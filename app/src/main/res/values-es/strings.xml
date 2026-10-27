@@ -98,4 +98,8 @@
     <string name="allfiles_title">Acceso a todos los archivos</string>
     <string name="allfiles_open">Abrir ajustes</string>
     <string name="allfiles_skip">Ahora no</string>
+    <string name="swipe_sens">Sensibilidad al deslizar</string>
+    <string name="sens_low">Baja</string>
+    <string name="sens_med">Media</string>
+    <string name="sens_high">Alta</string>
 </resources>

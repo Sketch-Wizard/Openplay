@@ -98,4 +98,8 @@
     <string name="allfiles_title">Zugriff auf alle Dateien</string>
     <string name="allfiles_open">Einstellungen öffnen</string>
     <string name="allfiles_skip">Nicht jetzt</string>
+    <string name="swipe_sens">Wischempfindlichkeit</string>
+    <string name="sens_low">Niedrig</string>
+    <string name="sens_med">Mittel</string>
+    <string name="sens_high">Hoch</string>
 </resources>

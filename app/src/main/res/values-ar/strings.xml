@@ -98,4 +98,8 @@
     <string name="allfiles_title">الوصول إلى جميع الملفات</string>
     <string name="allfiles_open">فتح الإعدادات</string>
     <string name="allfiles_skip">ليس الآن</string>
+    <string name="swipe_sens">حساسية البحث بالسحب</string>
+    <string name="sens_low">منخفضة</string>
+    <string name="sens_med">متوسطة</string>
+    <string name="sens_high">عالية</string>
 </resources>

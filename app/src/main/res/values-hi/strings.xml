@@ -98,4 +98,8 @@
     <string name="allfiles_title">सभी फ़ाइलों की पहुँच</string>
     <string name="allfiles_open">सेटिंग्स खोलें</string>
     <string name="allfiles_skip">अभी नहीं</string>
+    <string name="swipe_sens">स्वाइप सीक संवेदनशीलता</string>
+    <string name="sens_low">कम</string>
+    <string name="sens_med">मध्यम</string>
+    <string name="sens_high">अधिक</string>
 </resources>

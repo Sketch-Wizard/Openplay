@@ -98,4 +98,8 @@
     <string name="allfiles_title">Accès à tous les fichiers</string>
     <string name="allfiles_open">Ouvrir les paramètres</string>
     <string name="allfiles_skip">Pas maintenant</string>
+    <string name="swipe_sens">Sensibilité du balayage</string>
+    <string name="sens_low">Faible</string>
+    <string name="sens_med">Moyenne</string>
+    <string name="sens_high">Élevée</string>
 </resources>

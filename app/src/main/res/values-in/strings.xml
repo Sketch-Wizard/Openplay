@@ -98,4 +98,8 @@
     <string name="allfiles_title">Akses semua file</string>
     <string name="allfiles_open">Buka pengaturan</string>
     <string name="allfiles_skip">Nanti saja</string>
+    <string name="swipe_sens">Sensitivitas geser</string>
+    <string name="sens_low">Rendah</string>
+    <string name="sens_med">Sedang</string>
+    <string name="sens_high">Tinggi</string>
 </resources>

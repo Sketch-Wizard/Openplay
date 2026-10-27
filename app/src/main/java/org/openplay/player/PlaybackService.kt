@@ -2,6 +2,7 @@ package org.openplay.player
 
 import android.content.SharedPreferences
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
@@ -12,7 +13,7 @@ class PlaybackService : MediaSessionService() {
         if (key == "decoder") swapPlayer()
     }
 
-    private fun build(): ExoPlayer = ExoPlayer.Builder(this).setRenderersFactory(Decoders.factory(this)).build()
+    private fun build(): ExoPlayer = ExoPlayer.Builder(this).setRenderersFactory(Decoders.factory(this)).setSeekParameters(SeekParameters.CLOSEST_SYNC).build()
 
     override fun onCreate() {
         super.onCreate()

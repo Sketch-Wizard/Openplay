@@ -14,7 +14,8 @@ import java.util.UUID
 
 data class VaultItem(
     val id: String, val name: String, val ext: String, val origPath: String,
-    val size: Long, val durationMs: Long, val mime: String, val addedAt: Long, val origAbs: String = ""
+    val size: Long, val durationMs: Long, val mime: String, val addedAt: Long, val origAbs: String = "",
+    val loc: String = "int"   // "int" = internal app storage, "ext" = app folder on shared storage (instant moves)
 )
 
 /** Private folder: files live in app-private storage under random IDs; names/paths are kept in an index. */
@@ -30,14 +31,19 @@ object Vault {
     fun check(c: Context, pin: String) = prefs(c).getString("pin5", null) == hash(pin)
 
     private fun dir(c: Context) = File(c.filesDir, "vault").apply { mkdirs() }
+    /** Same storage volume as the user's videos, so moving a file in and out is a rename (instant). Hidden from the gallery. */
+    private fun extDir(c: Context): File? = try {
+        c.getExternalFilesDir(null)?.let { File(it, "vault").apply { mkdirs(); File(this, ".nomedia").createNewFile() } }
+    } catch (e: Exception) { null }
     private fun index(c: Context) = File(dir(c), "index.json")
-    fun file(c: Context, i: VaultItem) = File(dir(c), "${i.id}.${i.ext}")
+    fun file(c: Context, i: VaultItem): File =
+        File(if (i.loc == "ext") (extDir(c) ?: dir(c)) else dir(c), "${i.id}.${i.ext}")
 
     @Synchronized fun list(c: Context): List<VaultItem> = try {
         val arr = JSONArray(index(c).takeIf { it.exists() }?.readText() ?: "[]")
         (0 until arr.length()).map { arr.getJSONObject(it) }.map {
             VaultItem(it.getString("id"), it.getString("name"), it.getString("ext"), it.optString("orig"),
-                it.optLong("size"), it.optLong("dur"), it.optString("mime", "video/*"), it.optLong("added"), it.optString("abs"))
+                it.optLong("size"), it.optLong("dur"), it.optString("mime", "video/*"), it.optLong("added"), it.optString("abs"), it.optString("loc", "int"))
         }.sortedBy { it.name.lowercase() }
     } catch (e: Exception) { emptyList() }
 
@@ -45,18 +51,27 @@ object Vault {
         val arr = JSONArray()
         items.forEach {
             arr.put(JSONObject().put("id", it.id).put("name", it.name).put("ext", it.ext).put("orig", it.origPath)
-                .put("size", it.size).put("dur", it.durationMs).put("mime", it.mime).put("added", it.addedAt).put("abs", it.origAbs))
+                .put("size", it.size).put("dur", it.durationMs).put("mime", it.mime).put("added", it.addedAt).put("abs", it.origAbs).put("loc", it.loc))
         }
         index(c).writeText(arr.toString())
     }
 
     fun add(c: Context, v: Video): VaultItem? {
         val ext = v.title.substringAfterLast('.', "mp4").filter { it.isLetterOrDigit() }.take(5).ifEmpty { "mp4" }.lowercase()
-        val item = VaultItem(UUID.randomUUID().toString(), v.title, ext, v.relPath, v.size, v.durationMs, v.mime, System.currentTimeMillis(), File(v.path).parent ?: "")
+        val item = VaultItem(UUID.randomUUID().toString(), v.title, ext, v.relPath, v.size, v.durationMs, v.mime,
+            System.currentTimeMillis(), File(v.path).parent ?: "")
+        // 1) With "All files access" and the same storage volume: just move the file (instant, any size).
+        if (AllFiles.granted(c) && v.path.isNotBlank() && extDir(c) != null) {
+            val moved = item.copy(loc = "ext")
+            val ok = try { File(v.path).renameTo(file(c, moved)) } catch (e: Exception) { false }
+            if (ok) { save(c, list(c) + moved); return moved }
+        }
+        // 2) Otherwise copy (large buffer); the caller removes the original afterwards.
+        val dest = file(c, item)
         val ok = try {
-            c.contentResolver.openInputStream(v.uri)?.use { i -> file(c, item).outputStream().use { o -> i.copyTo(o) } } != null
+            c.contentResolver.openInputStream(v.uri)?.use { i -> dest.outputStream().use { o -> i.copyTo(o, 1 shl 20) } } != null
         } catch (e: Exception) { false }
-        if (!ok) { file(c, item).delete(); return null }
+        if (!ok) { dest.delete(); return null }
         save(c, list(c) + item)
         return item
     }
@@ -98,7 +113,9 @@ object Vault {
             val dest = if (orig != null && orig.isDirectory) orig else File(root, "Movies/Restored")
             dest.mkdirs()
             val target = uniqueFile(dest, item.name)
-            f.inputStream().use { i -> target.outputStream().use { o -> i.copyTo(o) } }
+            if (!f.renameTo(target)) {
+                f.inputStream().use { i -> target.outputStream().use { o -> i.copyTo(o, 1 shl 20) } }
+            }
             MediaScannerConnection.scanFile(c, arrayOf(target.absolutePath), arrayOf(item.mime), null)
             remove(c, item)
             true
@@ -119,7 +136,7 @@ object Vault {
                 }
                 val uri = c.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, cv) ?: continue
                 try {
-                    f.inputStream().use { i -> c.contentResolver.openOutputStream(uri)!!.use { o -> i.copyTo(o) } }
+                    f.inputStream().use { i -> c.contentResolver.openOutputStream(uri)!!.use { o -> i.copyTo(o, 1 shl 20) } }
                 } catch (e: Exception) { c.contentResolver.delete(uri, null, null); continue }
                 remove(c, item)
                 return true

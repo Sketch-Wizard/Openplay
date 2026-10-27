@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private const val REPO = "https://github.com/Sketch-Wizard/Openplay"
-private const val VERSION = "0.9.0"
+private const val VERSION = "0.9.1"
 private val speedValues = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
 @Composable
@@ -43,6 +43,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     var speed by remember { mutableFloatStateOf(Prefs.float(ctx, "speed", 1f)) }
     var resize by remember { mutableIntStateOf(Prefs.int(ctx, "resize", 0)) }
     var decoder by remember { mutableIntStateOf(Prefs.int(ctx, "decoder", 1)) }
+    var swipe by remember { mutableIntStateOf(Prefs.int(ctx, "swipe", 1)) }
     var bg by remember { mutableStateOf(Prefs.bool(ctx, "bg", false)) }
     var resume by remember { mutableStateOf(Prefs.bool(ctx, "resume", true)) }
     var lang by remember { mutableStateOf(Prefs.str(ctx, "lang", "")) }
@@ -58,6 +59,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val resizes = listOf(R.string.aspect_fit, R.string.aspect_fill, R.string.aspect_zoom).map { stringResource(it) }
     val decoders = listOf(R.string.dec_hw, R.string.dec_hwplus, R.string.dec_sw).map { stringResource(it) }
     val sysDefault = stringResource(R.string.system_default)
+    val sens = listOf(R.string.sens_low, R.string.sens_med, R.string.sens_high).map { stringResource(it) }
     val langName = Locales.all.firstOrNull { it.first == lang }?.second ?: sysDefault
 
     Column(Modifier.fillMaxSize()) {
@@ -83,6 +85,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             )
             ValueRow(Icons.Rounded.ScreenRotation, stringResource(R.string.video_orientation), orients[orient]) { dialog = "orient" }
             ValueRow(Icons.Rounded.Speed, stringResource(R.string.playback_speed), "${speed}x") { dialog = "speed" }
+            ValueRow(Icons.Rounded.TouchApp, stringResource(R.string.swipe_sens), sens[swipe]) { dialog = "swipe" }
             ValueRow(Icons.Rounded.AspectRatio, stringResource(R.string.aspect_ratio), resizes[resize]) { dialog = "resize" }
             SwitchRow(Icons.Rounded.Headphones, stringResource(R.string.bg_play), stringResource(R.string.bg_play_sub), bg) {
                 bg = it; Prefs.setBool(ctx, "bg", it)
@@ -133,6 +136,9 @@ fun SettingsScreen(onBack: () -> Unit) {
         }, { dialog = null })
         "speed" -> ChoiceDialog(stringResource(R.string.playback_speed), speedValues.map { "${it}x" }, speedValues.indexOf(speed), {
             speed = speedValues[it]; Prefs.setFloat(ctx, "speed", speed); dialog = null
+        }, { dialog = null })
+        "swipe" -> ChoiceDialog(stringResource(R.string.swipe_sens), sens, swipe, {
+            swipe = it; Prefs.setInt(ctx, "swipe", it); dialog = null
         }, { dialog = null })
         "resize" -> ChoiceDialog(stringResource(R.string.aspect_ratio), resizes, resize, {
             resize = it; Prefs.setInt(ctx, "resize", it); dialog = null

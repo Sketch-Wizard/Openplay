@@ -98,4 +98,8 @@
     <string name="allfiles_title">所有文件访问权限</string>
     <string name="allfiles_open">打开设置</string>
     <string name="allfiles_skip">暂不</string>
+    <string name="swipe_sens">滑动快进灵敏度</string>
+    <string name="sens_low">低</string>
+    <string name="sens_med">中</string>
+    <string name="sens_high">高</string>
 </resources>

@@ -17,6 +17,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,7 +52,7 @@ class PlayerUiState {
     var loop by mutableStateOf(false)
     var decoder by mutableIntStateOf(1)
     var orientation by mutableIntStateOf(0)
-    var rotationLocked by mutableStateOf(false)
+    var swipeGain by mutableFloatStateOf(1f)
     var audioNames by mutableStateOf<List<String>>(emptyList())
     var audioSel by mutableIntStateOf(-1)
     var subNames by mutableStateOf<List<String>>(emptyList())
@@ -68,7 +69,7 @@ class PlayerUiState {
 class PlayerActions(
     val onBack: () -> Unit, val onTogglePlay: () -> Unit, val onSeek: (Long) -> Unit,
     val onSeekBy: (Long) -> Unit, val onGetPosition: () -> Long, val onSpeed: (Float) -> Unit,
-    val onBgToggle: () -> Unit, val onRotate: () -> Unit, val onLockToggle: () -> Unit,
+    val onBgToggle: () -> Unit, val onRotate: () -> Unit,
     val onLoop: () -> Unit, val onDecoder: (Int) -> Unit, val onAudio: (Int) -> Unit,
     val onSub: (Int) -> Unit, val onLoadSub: () -> Unit, val onPlayItem: (Int) -> Unit,
     val onNext: () -> Unit, val onPrev: () -> Unit, val onResize: () -> Unit,
@@ -99,6 +100,11 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
     var drag by remember { mutableStateOf<Float?>(null) }
     var tip by remember { mutableStateOf<String?>(null) }
     val offTxt = stringResource(R.string.off)
+    val orientIcon = when (s.orientation) {
+        1 -> Icons.Rounded.ScreenLockLandscape
+        2 -> Icons.Rounded.ScreenLockPortrait
+        else -> Icons.Rounded.ScreenRotation
+    }
     val decoderLabels = listOf(R.string.dec_hw, R.string.dec_hwplus, R.string.dec_sw).map { stringResource(it) }
 
     LaunchedEffect(visible, s.playing, sheet, options, touch) {
@@ -112,8 +118,7 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
         Opt(Icons.Rounded.Speed, stringResource(R.string.opt_speed), false) { sheet = Sheet.Speed },
         Opt(Icons.Rounded.Audiotrack, stringResource(R.string.opt_audio), false) { sheet = Sheet.Audio },
         Opt(Icons.Rounded.AspectRatio, stringResource(R.string.opt_aspect), false) { a.onResize() },
-        Opt(Icons.Rounded.ScreenRotation, stringResource(R.string.opt_orientation), false) { a.onRotate() },
-        Opt(Icons.Rounded.ScreenLockRotation, stringResource(R.string.opt_lock_rotation), s.rotationLocked) { a.onLockToggle() },
+        Opt(orientIcon, stringResource(R.string.opt_orientation), s.orientation != 0) { a.onRotate() },
         Opt(Icons.Rounded.Headphones, stringResource(R.string.bg_play), s.bgPlay) { a.onBgToggle() },
         Opt(Icons.Rounded.Repeat, stringResource(R.string.opt_loop), s.loop) { a.onLoop() },
         Opt(Icons.Rounded.Memory, stringResource(R.string.decoder), false) { sheet = Sheet.Decoder },
@@ -143,11 +148,11 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
             }
             .pointerInput(Unit) {
                 var startX = 0f; var mode = 0; var acc = 0f
-                var startPos = 0L; var target = 0L; var ema = 0f
+                var startPos = 0L; var target = 0L; var ema = 0f; var lastSeek = 0L
                 detectDragGestures(
-                    onDragStart = { startX = it.x; mode = 0; acc = 0f; ema = 0f },
-                    onDragEnd = { if (mode == 1) s.seekInfo = null; mode = 0 },
-                    onDragCancel = { if (mode == 1) s.seekInfo = null; mode = 0 },
+                    onDragStart = { startX = it.x; mode = 0; acc = 0f; ema = 0f; lastSeek = 0L },
+                    onDragEnd = { if (mode == 1) { a.onSeek(target); s.seekInfo = null }; mode = 0 },
+                    onDragCancel = { if (mode == 1) { a.onSeek(target); s.seekInfo = null }; mode = 0 },
                     onDrag = { change, d ->
                         if (mode == 0 && (abs(d.x) > 2 || abs(d.y) > 2)) {
                             mode = if (abs(d.x) > abs(d.y)) 1 else if (startX < size.width / 2) 2 else 3
@@ -159,11 +164,13 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
                                 val dt = (change.uptimeMillis - change.previousUptimeMillis).coerceAtLeast(1L)
                                 val inst = abs(d.x) / dt
                                 ema = if (ema == 0f) inst else ema * 0.7f + inst * 0.3f
-                                val k = 0.03f + 0.14f * (ema.coerceAtMost(2f) / 2f)
+                                // seconds per pixel: about 0.02 for a slow drag, 0.04 for a normal swipe, up to about 0.12 for a very fast one
+                                val n = ema.coerceAtMost(2.5f) / 2.5f
+                                val k = (0.02f + 0.10f * n * n) * s.swipeGain
                                 val dur = s.duration
                                 val next = target + (d.x * k * 1000f).toLong()
                                 target = if (dur > 0) next.coerceIn(0L, dur) else next.coerceAtLeast(0L)
-                                a.onSeek(target)
+                                if (change.uptimeMillis - lastSeek >= 90) { a.onSeek(target); lastSeek = change.uptimeMillis }
                                 val delta = target - startPos
                                 s.seekInfo = fmtTime(target) + "   [" + (if (delta >= 0) "+" else "−") + fmtTime(abs(delta)) + "]"
                             }
@@ -245,8 +252,7 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
                         Text(fmtTime(s.duration), color = Color.White, fontSize = 12.sp)
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        IconBtn(if (s.rotationLocked) Icons.Rounded.ScreenLockRotation else Icons.Rounded.ScreenRotation, 24,
-                            if (s.rotationLocked) accent else Color.White) { act { a.onLockToggle() } }
+                        IconBtn(orientIcon, 24, if (s.orientation != 0) accent else Color.White) { act { a.onRotate() } }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconBtn(Icons.Rounded.SkipPrevious, 30) { act { a.onPrev() } }
                             IconBtn(Icons.Rounded.Replay10, 30) { act { a.onSeekBy(-10_000L) } }
@@ -279,8 +285,7 @@ fun PlayerUi(s: PlayerUiState, a: PlayerActions) {
                     close()
                 }, close)
             }
-            Sheet.Playlist -> SheetList(stringResource(R.string.opt_playlist), s.playlist.map { it.title.ifBlank { "Video" } }, s.index,
-                { a.onPlayItem(it); close() }, close)
+            Sheet.Playlist -> PlaylistSheet(stringResource(R.string.opt_playlist), s.playlist, s.index, { a.onPlayItem(it); close() }, close)
             Sheet.Decoder -> SheetList(stringResource(R.string.decoder), decoderLabels, s.decoder, { a.onDecoder(it); close() }, close)
             Sheet.None -> {}
         }
@@ -369,6 +374,37 @@ private fun SheetList(title: String, entries: List<String>, selected: Int, onPic
                     Text(e, color = if (i == selected) accent else Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         fontWeight = if (i == selected) FontWeight.Bold else FontWeight.Normal,
                         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { onPick(i) }.padding(12.dp))
+                }
+            }
+        }
+    }
+}
+
+/** Playlist with a thumbnail next to every title; the playing video is highlighted and scrolled into view. */
+@Composable
+private fun PlaylistSheet(title: String, items: List<PlItem>, current: Int, onPick: (Int) -> Unit, onClose: () -> Unit) {
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (current - 1).coerceAtLeast(0))
+    Box(Modifier.fillMaxSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose)) {
+        Column(
+            Modifier.align(Alignment.CenterEnd).padding(12.dp).width(340.dp).heightIn(max = 320.dp)
+                .clip(RoundedCornerShape(18.dp)).background(Color.Black.copy(alpha = 0.85f)).padding(8.dp)
+        ) {
+            Text(title, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(10.dp))
+            LazyColumn(state = listState) {
+                itemsIndexed(items) { i, item ->
+                    val sel = i == current
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                            .background(if (sel) accent.copy(alpha = 0.22f) else Color.Transparent)
+                            .clickable { onPick(i) }.padding(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Thumb(item.uri, Modifier.width(104.dp).aspectRatio(16f / 9f))
+                        Spacer(Modifier.width(10.dp))
+                        Text(item.title.ifBlank { "Video" }, color = if (sel) accent else Color.White, maxLines = 2,
+                            overflow = TextOverflow.Ellipsis, fontSize = 13.sp,
+                            fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
+                    }
                 }
             }
         }

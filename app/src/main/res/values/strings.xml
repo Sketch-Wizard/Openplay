@@ -150,4 +150,8 @@
     <string name="allfiles_skip">Not now</string>
     <string name="allfiles_msg">To move videos into the private folder silently and put them back in their original folders, OpenPlay needs \"All files access\". You grant it once on the next screen. Without it, Android asks for confirmation every time and some folders can\'t be restored exactly.</string>
     <string name="t_orig_failed">Could not remove the original of some videos</string>
+    <string name="swipe_sens">Swipe seek sensitivity</string>
+    <string name="sens_low">Low</string>
+    <string name="sens_med">Medium</string>
+    <string name="sens_high">High</string>
 </resources>
