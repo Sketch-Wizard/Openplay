@@ -102,4 +102,6 @@
     <string name="sens_low">Rendah</string>
     <string name="sens_med">Sedang</string>
     <string name="sens_high">Tinggi</string>
+    <string name="audio_lang">Bahasa audio default</string>
+    <string name="audio_lang_file">Sesuai file</string>
 </resources>

@@ -102,4 +102,6 @@
     <string name="sens_low">منخفضة</string>
     <string name="sens_med">متوسطة</string>
     <string name="sens_high">عالية</string>
+    <string name="audio_lang">لغة الصوت الافتراضية</string>
+    <string name="audio_lang_file">كما في الملف</string>
 </resources>

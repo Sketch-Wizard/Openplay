@@ -52,6 +52,10 @@ class PlayerActivity : ComponentActivity() {
     private var items: List<PlItem> = emptyList()
     private var startIndex = 0
     private var source = "all"
+    private var boost: Boost? = null
+    private var audioRestoredFor: String? = null
+    private var pendingExtSub = false
+    private val audioPrefs by lazy { getSharedPreferences("audio_choice", MODE_PRIVATE) }
     private var audioGroups: List<Tracks.Group> = emptyList()
     private var textGroups: List<Tracks.Group> = emptyList()
     private val handler = Handler(Looper.getMainLooper())
@@ -149,7 +153,7 @@ class PlayerActivity : ComponentActivity() {
                 ui.hud = getString(listOf(R.string.aspect_fit, R.string.aspect_fill, R.string.aspect_zoom)[ui.resizeIndex])
             },
             onBrightness = { ui.hud = sys.brightnessBy(it) },
-            onVolumeSteps = { ui.hud = sys.volumeBy(it) },
+            onVolumeSteps = { ui.hud = sys.volumeBy(it); boost?.set(Prefs.int(this, "boost", 100)) },
             onSaveDefaults = {
                 Prefs.setFloat(this, "speed", ui.speed); Prefs.setInt(this, "orient", ui.orientation)
                 Prefs.setBool(this, "bg", ui.bgPlay); Prefs.setInt(this, "resize", ui.resizeIndex)
@@ -180,6 +184,7 @@ class PlayerActivity : ComponentActivity() {
 
     private fun startEngine(bg: Boolean, index: Int, pos: Long, autoplay: Boolean) {
         val gen = ++engineGen
+        audioRestoredFor = null
         if (bg) {
             val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
             val future = MediaController.Builder(this, token).buildAsync()
@@ -202,6 +207,7 @@ class PlayerActivity : ComponentActivity() {
                 .setSeekParameters(SeekParameters.CLOSEST_SYNC)   // snap to the nearest keyframe: seeks play instantly
                 .build()
             localPlayer = p
+            boost = Boost(p).also { it.set(Prefs.int(this, "boost", 100)) }
             prepare(p, index, pos, autoplay)
         }
     }
@@ -209,6 +215,10 @@ class PlayerActivity : ComponentActivity() {
     private fun prepare(p: Player, index: Int, pos: Long, autoplay: Boolean) {
         p.addListener(listener)
         controller = p
+        // default audio language from Settings (a track you chose for this exact video is applied once its tracks are known)
+        val lang = Prefs.str(this, "audio_lang", "en")
+        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+            .apply { if (lang.isNotEmpty()) setPreferredAudioLanguage(lang) }.build()
         p.setMediaItems(items.map { MediaItem.fromUri(it.uri) }, index, pos)
         p.setPlaybackSpeed(ui.speed)
         p.repeatMode = if (ui.loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
@@ -220,6 +230,7 @@ class PlayerActivity : ComponentActivity() {
         engineGen++
         controller?.removeListener(listener)
         controller = null
+        boost?.release(); boost = null
         mediaController?.release(); mediaController = null
         localPlayer?.release(); localPlayer = null
     }
@@ -256,13 +267,42 @@ class PlayerActivity : ComponentActivity() {
         ui.subNames = textGroups.mapIndexed { i, g -> trackName(g.getTrackFormat(0), i) }
         val off = controller?.trackSelectionParameters?.disabledTrackTypes?.contains(C.TRACK_TYPE_TEXT) == true
         ui.subSel = if (off) -1 else textGroups.indexOfFirst { it.isSelected }
+
+        // a subtitle file loaded by hand is switched on automatically
+        if (pendingExtSub) {
+            val i = textGroups.indexOfFirst { it.getTrackFormat(0).id == "ext_sub" }
+            if (i >= 0) { pendingExtSub = false; selectSub(i) }
+        }
+        // the audio track you picked for this exact video last time
+        val key = currentKey()
+        if (key != null && audioGroups.isNotEmpty() && audioRestoredFor != key) {
+            audioRestoredFor = key
+            audioPrefs.getString(key, null)?.let { restoreAudio(it) }
+        }
     }
 
-    private fun selectAudio(i: Int) {
+    private fun currentKey(): String? = controller?.let { items.getOrNull(it.currentMediaItemIndex)?.uri?.toString() }
+
+    private fun restoreAudio(saved: String) {
+        val p = saved.split("|")
+        if (p.size < 3) return
+        val lang = p[0]; val label = p[1]; val idx = p[2].toIntOrNull() ?: -1
+        val formats = audioGroups.map { it.getTrackFormat(0) }
+        var target = formats.indexOfFirst { (it.language ?: "") == lang && (it.label ?: "") == label }
+        if (target < 0) target = formats.indexOfFirst { lang.isNotEmpty() && (it.language ?: "") == lang }
+        if (target < 0 && idx in formats.indices) target = idx
+        if (target >= 0 && target != ui.audioSel) selectAudio(target, save = false)
+    }
+
+    private fun selectAudio(i: Int, save: Boolean = true) {
         val c = controller ?: return
         val g = audioGroups.getOrNull(i) ?: return
         c.trackSelectionParameters = c.trackSelectionParameters.buildUpon()
             .setOverrideForType(TrackSelectionOverride(g.mediaTrackGroup, 0)).build()
+        if (save) currentKey()?.let { key ->
+            val f = g.getTrackFormat(0)
+            audioPrefs.edit().putString(key, (f.language ?: "") + "|" + (f.label ?: "") + "|" + i).apply()
+        }
     }
 
     private fun selectSub(i: Int) {
@@ -280,7 +320,7 @@ class PlayerActivity : ComponentActivity() {
     private fun addSubtitle(sub: Uri) {
         val c = controller ?: return
         val i = c.currentMediaItemIndex
-        val base = items.getOrNull(i) ?: return
+        val cur = c.currentMediaItem ?: return
         val name = contentResolver.query(sub, null, null, null, null)?.use {
             if (it.moveToFirst()) it.getString(it.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) else null
         } ?: ""
@@ -290,9 +330,12 @@ class PlayerActivity : ComponentActivity() {
             else -> MimeTypes.APPLICATION_SUBRIP
         }
         val cfg = MediaItem.SubtitleConfiguration.Builder(sub)
+            .setId("ext_sub").setLabel(name.ifBlank { "Subtitle" })
             .setMimeType(mime).setSelectionFlags(C.SELECTION_FLAG_DEFAULT).build()
+        val existing = cur.localConfiguration?.subtitleConfigurations?.filter { it.id != "ext_sub" } ?: emptyList()
         val pos = c.currentPosition
-        c.replaceMediaItem(i, MediaItem.Builder().setUri(base.uri).setSubtitleConfigurations(listOf(cfg)).build())
+        pendingExtSub = true
+        c.replaceMediaItem(i, cur.buildUpon().setSubtitleConfigurations(existing + cfg).build())
         c.seekTo(i, pos)
     }
 
@@ -311,6 +354,7 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        if (::sys.isInitialized) sys.saveVolume()
         val c = controller ?: return
         items.getOrNull(c.currentMediaItemIndex)?.let {
             prefs.edit().putLong(it.uri.toString(), c.currentPosition).apply()

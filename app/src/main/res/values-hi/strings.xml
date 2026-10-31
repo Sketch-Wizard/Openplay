@@ -102,4 +102,6 @@
     <string name="sens_low">कम</string>
     <string name="sens_med">मध्यम</string>
     <string name="sens_high">अधिक</string>
+    <string name="audio_lang">डिफ़ॉल्ट ऑडियो भाषा</string>
+    <string name="audio_lang_file">फ़ाइल के अनुसार</string>
 </resources>

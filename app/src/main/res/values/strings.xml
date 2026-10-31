@@ -154,4 +154,6 @@
     <string name="sens_low">Low</string>
     <string name="sens_med">Medium</string>
     <string name="sens_high">High</string>
+    <string name="audio_lang">Default audio language</string>
+    <string name="audio_lang_file">As in the file</string>
 </resources>

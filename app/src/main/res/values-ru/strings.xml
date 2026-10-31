@@ -102,4 +102,6 @@
     <string name="sens_low">Низкая</string>
     <string name="sens_med">Средняя</string>
     <string name="sens_high">Высокая</string>
+    <string name="audio_lang">Язык звука по умолчанию</string>
+    <string name="audio_lang_file">Как в файле</string>
 </resources>

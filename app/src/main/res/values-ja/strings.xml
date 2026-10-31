@@ -102,4 +102,6 @@
     <string name="sens_low">低</string>
     <string name="sens_med">中</string>
     <string name="sens_high">高</string>
+    <string name="audio_lang">既定の音声言語</string>
+    <string name="audio_lang_file">ファイルの設定に従う</string>
 </resources>

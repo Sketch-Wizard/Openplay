@@ -102,4 +102,6 @@
     <string name="sens_low">Baja</string>
     <string name="sens_med">Media</string>
     <string name="sens_high">Alta</string>
+    <string name="audio_lang">Idioma de audio predeterminado</string>
+    <string name="audio_lang_file">Según el archivo</string>
 </resources>
